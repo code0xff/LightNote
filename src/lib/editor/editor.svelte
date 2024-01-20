@@ -4,14 +4,21 @@
 	import StarterKit from '@tiptap/starter-kit';
 	import { Editor } from '@tiptap/core';
 	import { onMount } from 'svelte';
+	import BubbleMenu from '@tiptap/extension-bubble-menu';
 
 	let element: Element;
 	let editor: Editor;
+	let bubbleMenu: any;
 
 	onMount(() => {
 		editor = new Editor({
 			element: element,
-			extensions: [StarterKit],
+			extensions: [
+				StarterKit,
+				BubbleMenu.configure({
+					element: bubbleMenu
+				})
+			],
 			content: `
             <h2>
               Hi there,
@@ -108,24 +115,6 @@
 				h3
 			</button>
 			<button
-				on:click={() => editor.chain().focus().toggleHeading({ level: 4 }).run()}
-				class={editor.isActive('heading', { level: 4 }) ? 'is-active' : ''}
-			>
-				h4
-			</button>
-			<button
-				on:click={() => editor.chain().focus().toggleHeading({ level: 5 }).run()}
-				class={editor.isActive('heading', { level: 5 }) ? 'is-active' : ''}
-			>
-				h5
-			</button>
-			<button
-				on:click={() => editor.chain().focus().toggleHeading({ level: 6 }).run()}
-				class={editor.isActive('heading', { level: 6 }) ? 'is-active' : ''}
-			>
-				h6
-			</button>
-			<button
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
 				class={editor.isActive('bulletList') ? 'is-active' : ''}
 			>
@@ -168,4 +157,28 @@
 		</div>
 	</div>
 {/if}
+
+<div class="bubble-menu" bind:this={bubbleMenu}>
+	{#if editor}
+		<button
+			on:click={() => editor.chain().focus().toggleBold().run()}
+			class:active={editor.isActive('bold')}
+		>
+			Bold
+		</button>
+		<button
+			on:click={() => editor.chain().focus().toggleItalic().run()}
+			class:active={editor.isActive('italic')}
+		>
+			Italic
+		</button>
+		<button
+			on:click={() => editor.chain().focus().toggleStrike().run()}
+			class:active={editor.isActive('strike')}
+		>
+			Strike
+		</button>
+	{/if}
+</div>
+
 <div bind:this={element} />
