@@ -9,6 +9,7 @@
 	let element: Element;
 	let editor: Editor;
 	let bubbleMenu: any;
+	let files: FileList;
 
 	onMount(() => {
 		editor = new Editor({
@@ -55,6 +56,23 @@
 			}
 		});
 	});
+
+	function download() {
+		const html = editor.getHTML();
+		const blob = new Blob([html], { type: 'text/plain' });
+		const url = URL.createObjectURL(blob);
+		const ele = document.createElement('a');
+		ele.href = url;
+		ele.download = `note_${Date.now()}.html`;
+		ele.click();
+		setTimeout(() => URL.revokeObjectURL(url), 1000);
+	}
+
+	async function upload() {
+		if (files) {
+			editor.commands.setContent(await files[0].text());
+		}
+	}
 </script>
 
 {#if editor}
@@ -154,6 +172,9 @@
 			>
 				redo
 			</button>
+			<button on:click={download}>download</button>
+			<input type="file" id="selectedFile" style="display: none;" bind:files on:change={upload} />
+			<button on:click={() => document.getElementById('selectedFile')?.click()}>upload</button>
 		</div>
 	</div>
 {/if}

@@ -1,5 +1,31 @@
+button {
+  font-size: inherit;
+  font-family: inherit;
+  color: #000;
+  margin: 0.1rem;
+  border: 1px black solid;
+  border-radius: 0.3rem;
+  background: white;
+  accent-color: black;
+
+  &.is-active {
+    background: black;
+    color: #fff;
+  }
+}
+
+button:hover {
+  cursor: pointer;
+}
+
 /* Basic editor styles */
 .tiptap {
+  border: 1px black solid;
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  margin: 0.1rem;
+  outline: none;
+
   >*+* {
     margin-top: 0.75em;
   }
@@ -49,5 +75,26 @@
     border: none;
     border-top: 2px solid rgba(#0D0D0D, 0.1);
     margin: 2rem 0;
+  }
+}
+
+.bubble-menu {
+  display: flex;
+  background-color: #0D0D0D;
+  padding: 0.2rem;
+  border-radius: 0.3rem;
+
+  button {
+    border: none;
+    background: none;
+    color: #FFF;
+    font-size: 0.85rem;
+    font-weight: 500;
+    opacity: 0.6;
+
+    &:hover,
+    &.is-active {
+      opacity: 1;
+    }
   }
 }
