@@ -10,8 +10,9 @@
 	let editor: Editor;
 	let bubbleMenu: any;
 	let files: FileList;
+	let html2pdf: any;
 
-	onMount(() => {
+	onMount(async () => {
 		const content =
 			localStorage.getItem('auto-saved') ??
 			`
@@ -65,6 +66,9 @@
 				editor = editor;
 			}
 		});
+
+		// @ts-ignore
+		html2pdf = await import('html2pdf.js');
 	});
 
 	function download() {
@@ -82,6 +86,20 @@
 		if (files) {
 			editor.commands.setContent(await files[0].text());
 		}
+	}
+
+	async function downloadPdf() {
+		await html2pdf
+			.default()
+			.set({
+				margin: 1,
+				filename: `note_${Date.now()}.pdf`,
+				image: { type: 'jpeg', quality: 0.98 },
+				html2canvas: { scale: 2 },
+				jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+			})
+			.from(editor.getHTML())
+			.save();
 	}
 </script>
 
@@ -185,6 +203,7 @@
 			<button on:click={download}>download</button>
 			<input type="file" id="selectedFile" style="display: none;" bind:files on:change={upload} />
 			<button on:click={() => document.getElementById('selectedFile')?.click()}>upload</button>
+			<button on:click={downloadPdf}>pdf</button>
 		</div>
 	</div>
 {/if}
