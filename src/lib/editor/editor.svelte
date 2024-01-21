@@ -12,15 +12,9 @@
 	let files: FileList;
 
 	onMount(() => {
-		editor = new Editor({
-			element: element,
-			extensions: [
-				StarterKit,
-				BubbleMenu.configure({
-					element: bubbleMenu
-				})
-			],
-			content: `
+		const content =
+			localStorage.getItem('auto-saved') ??
+			`
             <h2>
               Hi there,
             </h2>
@@ -49,7 +43,23 @@
               <br />
               — Mom
             </blockquote>
-          `,
+          `;
+		editor = new Editor({
+			element: element,
+			extensions: [
+				StarterKit,
+				BubbleMenu.configure({
+					element: bubbleMenu
+				})
+			],
+			onUpdate({ editor }) {
+				try {
+					localStorage.setItem('auto-saved', editor.getHTML());
+				} catch (e: any) {
+					console.error(e);
+				}
+			},
+			content,
 			onTransaction: () => {
 				// force re-render so `editor.isActive` works as expected
 				editor = editor;
