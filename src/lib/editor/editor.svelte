@@ -6,12 +6,12 @@
 	import { onMount } from 'svelte';
 	import BubbleMenu from '@tiptap/extension-bubble-menu';
 	import { Button } from '@/lib/components/ui/button';
+	import { toggleMode } from 'mode-watcher';
 
 	let element: Element;
 	let editor: Editor;
 	let bubbleMenu: any;
 	let files: FileList;
-	let html2pdf: any;
 
 	onMount(async () => {
 		const content =
@@ -48,6 +48,11 @@
           `;
 		editor = new Editor({
 			element: element,
+			editorProps: {
+				attributes: {
+					class: 'border-2 border-[#0F172A] rounded-lg mt-2 md:mt-4 p-4 outline-none mx-0.5'
+				}
+			},
 			extensions: [
 				StarterKit,
 				BubbleMenu.configure({
@@ -67,9 +72,6 @@
 				editor = editor;
 			}
 		});
-
-		// @ts-ignore
-		html2pdf = await import('html2pdf.js');
 	});
 
 	function download() {
@@ -88,20 +90,6 @@
 			editor.commands.setContent(await files[0].text());
 		}
 	}
-
-	async function downloadPdf() {
-		await html2pdf
-			.default()
-			.set({
-				margin: 1,
-				filename: `note_${Date.now()}.pdf`,
-				image: { type: 'jpeg', quality: 0.98 },
-				html2canvas: { scale: 2 },
-				jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-			})
-			.from(editor.getHTML())
-			.save();
-	}
 </script>
 
 {#if editor}
@@ -110,129 +98,129 @@
 			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
-				variant={editor.isActive('bold') ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('bold') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				bold
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleItalic().run()}
 				disabled={!editor.can().chain().focus().toggleItalic().run()}
-				variant={editor.isActive('italic') ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('italic') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				italic
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleStrike().run()}
 				disabled={!editor.can().chain().focus().toggleStrike().run()}
-				variant={editor.isActive('strike') ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('strike') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				strike
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCode().run()}
 				disabled={!editor.can().chain().focus().toggleCode().run()}
-				variant={editor.isActive('code') ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('code') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				code
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().unsetAllMarks().run()}
-				class="m-0.5 h-6 px-2 text-sm outline">clear marks</Button
+				class="m-0.5 h-6 px-2 text-sm">clear marks</Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().clearNodes().run()}
-				class="m-0.5 h-6 px-2 text-sm outline">clear nodes</Button
+				class="m-0.5 h-6 px-2 text-sm">clear nodes</Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().setParagraph().run()}
-				variant={editor.isActive('paragraph') ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('paragraph') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				paragraph
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				h1
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				h2
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				h3
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
-				variant={editor.isActive('bulletList') ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				bullet list
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
-				variant={editor.isActive('orderedList') ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				ordered list
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
-				class={(editor.isActive('codeBlock') ? 'ghost' : 'outline') + ' m-0.5 h-6 px-2 text-sm'}
+				class={(editor.isActive('codeBlock') ? 'secondary' : 'outline') + ' m-0.5 h-6 px-2 text-sm'}
 			>
 				code block
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBlockquote().run()}
-				variant={editor.isActive('blockquote') ? 'default' : 'ghost'}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				variant={editor.isActive('blockquote') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				blockquote
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setHorizontalRule().run()}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				horizontal rule
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setHardBreak().run()}
-				class="m-0.5 h-6 px-2 text-sm outline">hard break</Button
+				class="m-0.5 h-6 px-2 text-sm">hard break</Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().undo().run()}
 				disabled={!editor.can().chain().focus().undo().run()}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				undo
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().redo().run()}
 				disabled={!editor.can().chain().focus().redo().run()}
-				class="m-0.5 h-6 px-2 text-sm outline"
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				redo
 			</Button>
-			<Button on:click={download} class="m-0.5 h-6 px-2 text-sm outline">download</Button>
+			<Button on:click={download} class="m-0.5 h-6 px-2 text-sm">download</Button>
 			<input type="file" id="selectedFile" style="display: none;" bind:files on:change={upload} />
 			<Button
 				on:click={() => document.getElementById('selectedFile')?.click()}
-				class="m-0.5 h-6 px-2 text-sm outline">upload</Button
+				class="m-0.5 h-6 px-2 text-sm">upload</Button
 			>
-			<Button on:click={downloadPdf} class="m-0.5 h-6 px-2 text-sm outline">pdf</Button>
+			<Button on:click={toggleMode} class="m-0.5 h-6 px-2 text-sm">mode</Button>
 		</div>
 	</div>
 {/if}
