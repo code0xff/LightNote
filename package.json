@@ -43,6 +43,7 @@
 		"@tiptap/extension-bubble-menu": "^2.1.16",
 		"@tiptap/pm": "^2.1.16",
 		"@tiptap/starter-kit": "^2.1.16",
+		"bits-ui": "^0.15.1",
 		"clsx": "^2.1.0",
 		"html2pdf.js": "^0.10.1",
 		"lucide-svelte": "^0.314.0",

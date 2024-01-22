@@ -5,6 +5,7 @@
 	import { Editor } from '@tiptap/core';
 	import { onMount } from 'svelte';
 	import BubbleMenu from '@tiptap/extension-bubble-menu';
+	import { Button } from '@/lib/components/ui/button';
 
 	let element: Element;
 	let editor: Editor;
@@ -33,7 +34,7 @@
             <p>
               Isn’t that great? And all of that is editable. But wait, there’s more. Let’s try a code block:
             </p>
-            <pre><code class="language-css">body {
+            <pre><code class='language-css'>body {
         display: none;
       }</code></pre>
             <p>
@@ -47,6 +48,12 @@
           `;
 		editor = new Editor({
 			element: element,
+			editorProps: {
+				attributes: {
+					class:
+						'prose dark:prose-invert prose-sm sm:prose-base lg:prose-lg xl:prose-2xl m-5 focus:outline-none'
+				}
+			},
 			extensions: [
 				StarterKit,
 				BubbleMenu.configure({
@@ -106,104 +113,132 @@
 {#if editor}
 	<div>
 		<div>
-			<button
+			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
-				class={editor.isActive('bold') ? 'is-active' : ''}
+				variant={editor.isActive('bold') ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				bold
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleItalic().run()}
 				disabled={!editor.can().chain().focus().toggleItalic().run()}
-				class={editor.isActive('italic') ? 'is-active' : ''}
+				variant={editor.isActive('italic') ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				italic
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleStrike().run()}
 				disabled={!editor.can().chain().focus().toggleStrike().run()}
-				class={editor.isActive('strike') ? 'is-active' : ''}
+				variant={editor.isActive('strike') ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				strike
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleCode().run()}
 				disabled={!editor.can().chain().focus().toggleCode().run()}
-				class={editor.isActive('code') ? 'is-active' : ''}
+				variant={editor.isActive('code') ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				code
-			</button>
-			<button on:click={() => editor.chain().focus().unsetAllMarks().run()}> clear marks </button>
-			<button on:click={() => editor.chain().focus().clearNodes().run()}> clear nodes </button>
-			<button
+			</Button>
+			<Button
+				on:click={() => editor.chain().focus().unsetAllMarks().run()}
+				class="m-0.5 h-6 px-2 text-sm outline">clear marks</Button
+			>
+			<Button
+				on:click={() => editor.chain().focus().clearNodes().run()}
+				class="m-0.5 h-6 px-2 text-sm outline">clear nodes</Button
+			>
+			<Button
 				on:click={() => editor.chain().focus().setParagraph().run()}
-				class={editor.isActive('paragraph') ? 'is-active' : ''}
+				variant={editor.isActive('paragraph') ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				paragraph
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-				class={editor.isActive('heading', { level: 1 }) ? 'is-active' : ''}
+				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				h1
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-				class={editor.isActive('heading', { level: 2 }) ? 'is-active' : ''}
+				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				h2
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-				class={editor.isActive('heading', { level: 3 }) ? 'is-active' : ''}
+				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				h3
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
-				class={editor.isActive('bulletList') ? 'is-active' : ''}
+				variant={editor.isActive('bulletList') ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				bullet list
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
-				class={editor.isActive('orderedList') ? 'is-active' : ''}
+				variant={editor.isActive('orderedList') ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				ordered list
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
-				class={editor.isActive('codeBlock') ? 'is-active' : ''}
+				class={(editor.isActive('codeBlock') ? 'ghost' : 'outline') + ' m-0.5 h-6 px-2 text-sm'}
 			>
 				code block
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleBlockquote().run()}
-				class={editor.isActive('blockquote') ? 'is-active' : ''}
+				variant={editor.isActive('blockquote') ? 'default' : 'ghost'}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				blockquote
-			</button>
-			<button on:click={() => editor.chain().focus().setHorizontalRule().run()}>
+			</Button>
+			<Button
+				on:click={() => editor.chain().focus().setHorizontalRule().run()}
+				class="m-0.5 h-6 px-2 text-sm outline"
+			>
 				horizontal rule
-			</button>
-			<button on:click={() => editor.chain().focus().setHardBreak().run()}> hard break </button>
-			<button
+			</Button>
+			<Button
+				on:click={() => editor.chain().focus().setHardBreak().run()}
+				class="m-0.5 h-6 px-2 text-sm outline">hard break</Button
+			>
+			<Button
 				on:click={() => editor.chain().focus().undo().run()}
 				disabled={!editor.can().chain().focus().undo().run()}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				undo
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().redo().run()}
 				disabled={!editor.can().chain().focus().redo().run()}
+				class="m-0.5 h-6 px-2 text-sm outline"
 			>
 				redo
-			</button>
-			<button on:click={download}>download</button>
+			</Button>
+			<Button on:click={download} class="m-0.5 h-6 px-2 text-sm outline">download</Button>
 			<input type="file" id="selectedFile" style="display: none;" bind:files on:change={upload} />
-			<button on:click={() => document.getElementById('selectedFile')?.click()}>upload</button>
-			<button on:click={downloadPdf}>pdf</button>
+			<Button
+				on:click={() => document.getElementById('selectedFile')?.click()}
+				class="m-0.5 h-6 px-2 text-sm outline">upload</Button
+			>
+			<Button on:click={downloadPdf} class="m-0.5 h-6 px-2 text-sm outline">pdf</Button>
 		</div>
 	</div>
 {/if}
@@ -212,19 +247,19 @@
 	{#if editor}
 		<button
 			on:click={() => editor.chain().focus().toggleBold().run()}
-			class:active={editor.isActive('bold')}
+			class={editor.isActive('bold') ? 'is-active' : ''}
 		>
 			Bold
 		</button>
 		<button
 			on:click={() => editor.chain().focus().toggleItalic().run()}
-			class:active={editor.isActive('italic')}
+			class={editor.isActive('italic') ? 'is-active' : ''}
 		>
 			Italic
 		</button>
 		<button
 			on:click={() => editor.chain().focus().toggleStrike().run()}
-			class:active={editor.isActive('strike')}
+			class={editor.isActive('strike') ? 'is-active' : ''}
 		>
 			Strike
 		</button>

@@ -1,31 +1,5 @@
-button {
-  font-size: inherit;
-  font-family: inherit;
-  color: #000;
-  margin: 0.1rem;
-  border: 1px black solid;
-  border-radius: 0.3rem;
-  background: white;
-  accent-color: black;
-
-  &.is-active {
-    background: black;
-    color: #fff;
-  }
-}
-
-button:hover {
-  cursor: pointer;
-}
-
 /* Basic editor styles */
 .tiptap {
-  border: 1px black solid;
-  border-radius: 0.3rem;
-  padding: 0.1rem 0.4rem;
-  margin: 0.1rem;
-  outline: none;
-
   >*+* {
     margin-top: 0.75em;
   }
@@ -35,10 +9,39 @@ button:hover {
     padding: 0 1rem;
   }
 
+  ul {
+    list-style-type: disc;
+  }
+
+  ol {
+    list-style-type: decimal;
+  }
+
+  h1 {
+    font-size: 2em;
+    margin-top: 0.67em;
+    margin-bottom: 0.67em;
+  }
+
+  h2 {
+    font-size: 1.5em;
+    margin-top: 0.83em;
+    margin-bottom: 0.83em;
+  }
+
+  h3 {
+    font-size: 1.17em;
+    margin-top: 1em;
+    margin-bottom: 1em;
+  }
+
   h1,
   h2,
   h3 {
-    line-height: 1.1;
+    display: block;
+    margin-left: 0;
+    margin-right: 0;
+    font-weight: bold;
   }
 
   code {
@@ -47,7 +50,7 @@ button:hover {
   }
 
   pre {
-    background: #0D0D0D;
+    background: #0F172A;
     color: #FFF;
     font-family: 'JetBrainsMono', monospace;
     padding: 0.75rem 1rem;
@@ -68,19 +71,19 @@ button:hover {
 
   blockquote {
     padding-left: 1rem;
-    border-left: 2px solid rgba(#0D0D0D, 0.1);
+    border-left: 2px solid rgba(#0F172A, 0.1);
   }
 
   hr {
     border: none;
-    border-top: 2px solid rgba(#0D0D0D, 0.1);
+    border-top: 2px solid rgba(#0F172A, 0.1);
     margin: 2rem 0;
   }
 }
 
 .bubble-menu {
   display: flex;
-  background-color: #0D0D0D;
+  background-color: #0F172A;
   padding: 0.2rem;
   border-radius: 0.3rem;
 
@@ -89,8 +92,8 @@ button:hover {
     background: none;
     color: #FFF;
     font-size: 0.85rem;
-    font-weight: 500;
     opacity: 0.6;
+    padding: 0.2rem;
 
     &:hover,
     &.is-active {
