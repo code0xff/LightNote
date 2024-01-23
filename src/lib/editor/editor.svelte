@@ -179,7 +179,8 @@
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
-				class={(editor.isActive('codeBlock') ? 'secondary' : 'outline') + ' m-0.5 h-6 px-2 text-sm'}
+				variant={editor.isActive('codeBlock') ? 'default' : 'secondary'}
+				class="m-0.5 h-6 px-2 text-sm"
 			>
 				code block
 			</Button>
