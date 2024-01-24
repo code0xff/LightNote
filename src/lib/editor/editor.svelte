@@ -159,14 +159,14 @@
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
 				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
 				class="mt-0.5 h-6 px-2 text-sm"
-				>-
+				>-ul
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
 				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
 				class="my-0.5 h-6 px-2 text-sm"
 			>
-				1.
+				1.ol
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
@@ -186,25 +186,25 @@
 				on:click={() => editor.chain().focus().setHorizontalRule().run()}
 				class="my-0.5 h-6 px-2 text-sm"
 			>
-				_
+				--
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setHardBreak().run()}
-				class="my-0.5 h-6 px-2 text-sm">⏎</Button
+				class="my-0.5 h-6 px-2 text-sm">Ent</Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().undo().run()}
 				disabled={!editor.can().chain().focus().undo().run()}
 				class="my-0.5 h-6 px-2 text-sm"
 			>
-				↺
+				←
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().redo().run()}
 				disabled={!editor.can().chain().focus().redo().run()}
 				class="my-0.5 h-6 px-2 text-sm"
 			>
-				↻
+				→
 			</Button>
 			<Button on:click={download} class="my-0.5 h-6 px-2 text-sm">↓</Button>
 			<input type="file" id="selectedFile" style="display: none;" bind:files on:change={upload} />
