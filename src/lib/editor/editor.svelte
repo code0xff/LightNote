@@ -76,13 +76,10 @@
 
 	function download() {
 		const html = editor.getHTML();
-		const blob = new Blob([html], { type: 'text/plain' });
-		const url = URL.createObjectURL(blob);
-		const ele = document.createElement('a');
-		ele.href = url;
-		ele.download = `note_${Date.now()}.html`;
-		ele.click();
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
+		const element = document.createElement('a');
+		element.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(html);
+		element.download = `note_${Date.now()}.html`;
+		element.click();
 	}
 
 	async function upload() {
