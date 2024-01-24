@@ -50,7 +50,7 @@
 			element: element,
 			editorProps: {
 				attributes: {
-					class: 'border-2 border-[#0F172A] rounded-lg mt-9 p-4 outline-none'
+					class: 'border-2 border-[#0F172A] rounded-lg mt-9 max-md:p-2 p-4 outline-none'
 				}
 			},
 			extensions: [
@@ -91,7 +91,7 @@
 
 {#if editor}
 	<div>
-		<nav class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[#0F172A]">
+		<nav class="max-md:px-2 fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[#0F172A]">
 			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
@@ -233,4 +233,4 @@
 	{/if}
 </div>
 
-<div bind:this={element} class="p-4" />
+<div bind:this={element} class="max-md:px-2 max-md:pb-2 max-md:pt-4 p-4" />
