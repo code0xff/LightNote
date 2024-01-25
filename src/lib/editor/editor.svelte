@@ -77,8 +77,9 @@
 	function download() {
 		const html = editor.getHTML();
 		const element = document.createElement('a');
-		element.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(html);
-		element.download = `note_${Date.now()}.html`;
+		const blob = new Blob([html], { type: 'text/html' });
+		element.setAttribute('href', window.URL.createObjectURL(blob));
+		element.setAttribute('download', `note_${Date.now()}.html`);
 		element.click();
 	}
 
@@ -91,12 +92,12 @@
 
 {#if editor}
 	<div>
-		<nav class="max-md:px-2 fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[#0F172A]">
+		<nav class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[#0F172A] max-md:px-2">
 			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
 				variant={editor.isActive('bold') ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				<strong>B</strong>
 			</Button>
@@ -104,7 +105,7 @@
 				on:click={() => editor.chain().focus().toggleItalic().run()}
 				disabled={!editor.can().chain().focus().toggleItalic().run()}
 				variant={editor.isActive('italic') ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				<i>I</i>
 			</Button>
@@ -112,7 +113,7 @@
 				on:click={() => editor.chain().focus().toggleStrike().run()}
 				disabled={!editor.can().chain().focus().toggleStrike().run()}
 				variant={editor.isActive('strike') ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				<strike>S</strike>
 			</Button>
@@ -120,68 +121,68 @@
 				on:click={() => editor.chain().focus().toggleCode().run()}
 				disabled={!editor.can().chain().focus().toggleCode().run()}
 				variant={editor.isActive('code') ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				{'{}'}
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setParagraph().run()}
 				variant={editor.isActive('paragraph') ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				p
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
 				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				h1
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
 				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				h2
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
 				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				h3
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
 				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
-				class="max-md:hidden mt-0.5 h-6 px-2 text-sm"
+				class="mt-0.5 h-6 px-2 text-sm max-md:hidden"
 				>-ul
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
 				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				1.ol
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
 				variant={editor.isActive('codeBlock') ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				{'{...}'}
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBlockquote().run()}
 				variant={editor.isActive('blockquote') ? 'default' : 'secondary'}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				|...
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setHorizontalRule().run()}
-				class="max-md:hidden my-0.5 h-6 px-2 text-sm"
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				--
 			</Button>
@@ -233,4 +234,4 @@
 	{/if}
 </div>
 
-<div bind:this={element} class="max-md:px-2 max-md:pb-2 max-md:pt-4 p-4" />
+<div bind:this={element} class="p-4 max-md:px-2 max-md:pb-2 max-md:pt-4" />
