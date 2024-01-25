@@ -5,52 +5,34 @@
 	import { Editor } from '@tiptap/core';
 	import { onMount } from 'svelte';
 	import BubbleMenu from '@tiptap/extension-bubble-menu';
+	import Link from '@tiptap/extension-link';
+	import { Button } from '@/lib/components/ui/button';
+	import { toggleMode } from 'mode-watcher';
 
 	let element: Element;
 	let editor: Editor;
 	let bubbleMenu: any;
 	let files: FileList;
-	let html2pdf: any;
 
 	onMount(async () => {
 		const content =
 			localStorage.getItem('auto-saved') ??
-			`
-            <h2>
-              Hi there,
-            </h2>
-            <p>
-              this is a <em>basic</em> example of <strong>tiptap</strong>. Sure, there are all kind of basic text styles you’d probably expect from a text editor. But wait until you see the lists:
-            </p>
-            <ul>
-              <li>
-                That’s a bullet list with one …
-              </li>
-              <li>
-                … or two list items.
-              </li>
-            </ul>
-            <p>
-              Isn’t that great? And all of that is editable. But wait, there’s more. Let’s try a code block:
-            </p>
-            <pre><code class="language-css">body {
-        display: none;
-      }</code></pre>
-            <p>
-              I know, I know, this is impressive. It’s only the tip of the iceberg though. Give it a try and click a little bit around. Don’t forget to check the other examples too.
-            </p>
-            <blockquote>
-              Wow, that’s amazing. Good work, boy! 👏
-              <br />
-              — Mom
-            </blockquote>
-          `;
+			'<h1>Hello,</h1><p>This is a note web application by <a target="_blank" rel="noopener noreferrer nofollow" href="https://kit.svelte.dev">SvelteKit</a>, <a target="_blank" rel="noopener noreferrer nofollow" href="https://tiptap.dev">Tiptap</a> and <a target="_blank" rel="noopener noreferrer nofollow" href="https://ui.shadcn.com/">shadcn/ui</a>.</p><p>This note app essentially supports three types of headers, basic paragraph type, code block, unordered list, and ordered list types necessary for document creation.</p><p>Header types and basic paragraph types can be emphasized with formatting options such as <strong>bold</strong>, <em>italic</em>, and <s>strike</s>.</p><p>Links can be added or modified through the link button, and they can be removed using the link removal button.</p><p>The history feature is also provided through undo and redo actions.</p><p>Documents are basically stored in <strong>LocalStorage</strong>, and if you wish to save them permanently, you should use the provided save function to store them as HTML files. Additionally, you can upload these files to continue editing.</p><p>The theme supports both Light and Dark modes.</p><p>If you want more features, please visit the tiptap documentation and extend the functionality through extensions.</p><hr><h1><code># H1</code>: H1</h1><h2><code>## H2</code>: H2</h2><h3><code>### H3</code>: H3</h3><p><code>`code`</code>: <code>code</code></p><p><code>**bold**</code>: <strong>bold</strong></p><p><code>*italic*</code>: <em>italic</em></p><p><code>~~strike~~</code>: <s>strike</s></p><p><code>- unordered list</code>:</p><ul><li><p>unordered list</p></li></ul><p><code>1. ordered list</code>:</p><ol><li><p>ordered list</p></li></ol><p><code>```code block```</code>:</p><pre><code>```code block```</code></pre><p><code>&gt; block quote</code>:</p><blockquote><p>block quote</p></blockquote><p><code>---</code>:</p><hr><p><code>cmd+z</code>: undo</p><p><code>cmd+shift+z</code>: redo</p>';
 		editor = new Editor({
 			element: element,
+			editorProps: {
+				attributes: {
+					class: 'border-2 border-[#0F172A] rounded-lg mt-9 max-md:p-2 p-4 outline-none'
+				}
+			},
 			extensions: [
 				StarterKit,
 				BubbleMenu.configure({
 					element: bubbleMenu
+				}),
+				Link.configure({
+					openOnClick: false,
+					autolink: true
 				})
 			],
 			onUpdate({ editor }) {
@@ -66,20 +48,21 @@
 				editor = editor;
 			}
 		});
-
-		// @ts-ignore
-		html2pdf = await import('html2pdf.js');
 	});
 
 	function download() {
+		let defaultName = `note_${Date.now()}.html`;
+		let download = window.prompt('Please insert file name', defaultName);
+		if (download === null || download.trim().length === 0) {
+			download = defaultName;
+			return;
+		}
 		const html = editor.getHTML();
-		const blob = new Blob([html], { type: 'text/plain' });
-		const url = URL.createObjectURL(blob);
-		const ele = document.createElement('a');
-		ele.href = url;
-		ele.download = `note_${Date.now()}.html`;
-		ele.click();
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
+		const element = document.createElement('a');
+		const blob = new Blob([html], { type: 'text/html' });
+		element.setAttribute('href', window.URL.createObjectURL(blob));
+		element.setAttribute('download', download);
+		element.click();
 	}
 
 	async function upload() {
@@ -88,123 +71,151 @@
 		}
 	}
 
-	async function downloadPdf() {
-		await html2pdf
-			.default()
-			.set({
-				margin: 1,
-				filename: `note_${Date.now()}.pdf`,
-				image: { type: 'jpeg', quality: 0.98 },
-				html2canvas: { scale: 2 },
-				jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
-			})
-			.from(editor.getHTML())
-			.save();
+	function setLink() {
+		const previousUrl = editor.getAttributes('link').href;
+		const url = window.prompt('Please insert link url', previousUrl);
+
+		if (url === null) {
+			return;
+		}
+		if (url === '') {
+			editor.chain().focus().extendMarkRange('link').unsetLink().run();
+			return;
+		}
+		editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
 	}
 </script>
 
 {#if editor}
 	<div>
-		<div>
-			<button
+		<nav class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[#0F172A] max-md:px-2">
+			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
-				class={editor.isActive('bold') ? 'is-active' : ''}
+				variant={editor.isActive('bold') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				bold
-			</button>
-			<button
+				<strong>B</strong>
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleItalic().run()}
 				disabled={!editor.can().chain().focus().toggleItalic().run()}
-				class={editor.isActive('italic') ? 'is-active' : ''}
+				variant={editor.isActive('italic') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				italic
-			</button>
-			<button
+				<i>I</i>
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleStrike().run()}
 				disabled={!editor.can().chain().focus().toggleStrike().run()}
-				class={editor.isActive('strike') ? 'is-active' : ''}
+				variant={editor.isActive('strike') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				strike
-			</button>
-			<button
+				<strike>S</strike>
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleCode().run()}
 				disabled={!editor.can().chain().focus().toggleCode().run()}
-				class={editor.isActive('code') ? 'is-active' : ''}
+				variant={editor.isActive('code') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				code
-			</button>
-			<button on:click={() => editor.chain().focus().unsetAllMarks().run()}> clear marks </button>
-			<button on:click={() => editor.chain().focus().clearNodes().run()}> clear nodes </button>
-			<button
+				{'{}'}
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().setParagraph().run()}
-				class={editor.isActive('paragraph') ? 'is-active' : ''}
+				variant={editor.isActive('paragraph') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				paragraph
-			</button>
-			<button
+				p
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-				class={editor.isActive('heading', { level: 1 }) ? 'is-active' : ''}
+				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				h1
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-				class={editor.isActive('heading', { level: 2 }) ? 'is-active' : ''}
+				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				h2
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-				class={editor.isActive('heading', { level: 3 }) ? 'is-active' : ''}
+				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
 				h3
-			</button>
-			<button
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
-				class={editor.isActive('bulletList') ? 'is-active' : ''}
-			>
-				bullet list
-			</button>
-			<button
+				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
+				class="mt-0.5 h-6 px-2 text-sm max-md:hidden"
+				>-ul
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
-				class={editor.isActive('orderedList') ? 'is-active' : ''}
+				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				ordered list
-			</button>
-			<button
+				1.ol
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
-				class={editor.isActive('codeBlock') ? 'is-active' : ''}
+				variant={editor.isActive('codeBlock') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				code block
-			</button>
-			<button
+				{'{...}'}
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleBlockquote().run()}
-				class={editor.isActive('blockquote') ? 'is-active' : ''}
+				variant={editor.isActive('blockquote') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				blockquote
-			</button>
-			<button on:click={() => editor.chain().focus().setHorizontalRule().run()}>
-				horizontal rule
-			</button>
-			<button on:click={() => editor.chain().focus().setHardBreak().run()}> hard break </button>
-			<button
+				{'>..'}
+			</Button>
+			<Button
+				on:click={() => editor.chain().focus().setHorizontalRule().run()}
+				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+			>
+				---
+			</Button>
+			<Button
+				on:click={setLink}
+				variant={editor.isActive('link') ? 'default' : 'secondary'}
+				class="my-0.5 h-6 px-2 text-sm underline">{'link'}</Button
+			>
+			<Button
+				on:click={() => editor.chain().focus().unsetLink().run()}
+				disabled={!editor.isActive('link')}
+				class="my-0.5 h-6 px-2 text-sm"
+			>
+				<strike>{'link'}</strike>
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().undo().run()}
 				disabled={!editor.can().chain().focus().undo().run()}
+				class="my-0.5 h-6 px-2 text-sm"
 			>
-				undo
-			</button>
-			<button
+				←
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().redo().run()}
 				disabled={!editor.can().chain().focus().redo().run()}
+				class="my-0.5 h-6 px-2 text-sm"
 			>
-				redo
-			</button>
-			<button on:click={download}>download</button>
+				→
+			</Button>
+			<Button on:click={download} class="my-0.5 h-6 px-2 text-sm">↓</Button>
 			<input type="file" id="selectedFile" style="display: none;" bind:files on:change={upload} />
-			<button on:click={() => document.getElementById('selectedFile')?.click()}>upload</button>
-			<button on:click={downloadPdf}>pdf</button>
-		</div>
+			<Button
+				on:click={() => document.getElementById('selectedFile')?.click()}
+				class="my-0.5 h-6 px-2 text-sm">↑</Button
+			>
+			<Button on:click={toggleMode} class="my-0.5 h-6 px-2 text-sm">⛯</Button>
+		</nav>
 	</div>
 {/if}
 
@@ -212,23 +223,23 @@
 	{#if editor}
 		<button
 			on:click={() => editor.chain().focus().toggleBold().run()}
-			class:active={editor.isActive('bold')}
+			class={editor.isActive('bold') ? 'is-active' : ''}
 		>
-			Bold
+			<strong>B</strong>
 		</button>
 		<button
 			on:click={() => editor.chain().focus().toggleItalic().run()}
-			class:active={editor.isActive('italic')}
+			class={editor.isActive('italic') ? 'is-active' : ''}
 		>
-			Italic
+			<i>I</i>
 		</button>
 		<button
 			on:click={() => editor.chain().focus().toggleStrike().run()}
-			class:active={editor.isActive('strike')}
+			class={editor.isActive('strike') ? 'is-active' : ''}
 		>
-			Strike
+			<strike>S</strike>
 		</button>
 	{/if}
 </div>
 
-<div bind:this={element} />
+<div bind:this={element} class="p-4 max-md:px-2 max-md:pb-2 max-md:pt-4" />

@@ -1,63 +1,87 @@
-button {
-  font-size: inherit;
-  font-family: inherit;
-  color: #000;
-  margin: 0.1rem;
-  border: 1px black solid;
-  border-radius: 0.3rem;
-  background: white;
-  accent-color: black;
-
-  &.is-active {
-    background: black;
-    color: #fff;
-  }
-}
-
-button:hover {
-  cursor: pointer;
-}
-
 /* Basic editor styles */
 .tiptap {
-  border: 1px black solid;
-  border-radius: 0.3rem;
-  padding: 0.1rem 0.4rem;
-  margin: 0.1rem;
-  outline: none;
-
   >*+* {
     margin-top: 0.75em;
   }
 
-  ul,
-  ol {
-    padding: 0 1rem;
+  h1 {
+    display: block;
+    font-size: 2em;
+    margin-top: 0.67em;
+    margin-bottom: 0.67em;
+    margin-left: 0;
+    margin-right: 0;
+    font-weight: bold;
   }
 
-  h1,
-  h2,
+  h2 {
+    display: block;
+    font-size: 1.5em;
+    margin-top: 0.83em;
+    margin-bottom: 0.83em;
+    margin-left: 0;
+    margin-right: 0;
+    font-weight: bold;
+  }
+
   h3 {
-    line-height: 1.1;
+    display: block;
+    font-size: 1.17em;
+    margin-top: 1em;
+    margin-bottom: 1em;
+    margin-left: 0;
+    margin-right: 0;
+    font-weight: bold;
+  }
+
+  p {
+    display: block;
+    margin-top: 1em;
+    margin-bottom: 1em;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  ul {
+    display: block;
+    list-style-type: disc;
+    margin-top: 1em;
+    margin-bottom: 1 em;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 40px;
+  }
+
+  ol {
+    display: block;
+    list-style-type: decimal;
+    margin-top: 1em;
+    margin-bottom: 1em;
+    margin-left: 0;
+    margin-right: 0;
+    padding-left: 40px;
   }
 
   code {
+    font-family: monospace;
     background-color: rgba(#616161, 0.1);
     color: #616161;
   }
 
   pre {
-    background: #0D0D0D;
+    display: block;
+    font-family: monospace;
+    white-space: pre;
+    background: #0F172A;
     color: #FFF;
-    font-family: 'JetBrainsMono', monospace;
-    padding: 0.75rem 1rem;
+    margin: 1em 0;
+    padding: 1rem;
     border-radius: 0.5rem;
 
     code {
       color: inherit;
       padding: 0;
       background: none;
-      font-size: 0.8rem;
     }
   }
 
@@ -68,29 +92,38 @@ button:hover {
 
   blockquote {
     padding-left: 1rem;
-    border-left: 2px solid rgba(#0D0D0D, 0.1);
+    border-left: 2px solid #0F172A;
   }
 
   hr {
-    border: none;
-    border-top: 2px solid rgba(#0D0D0D, 0.1);
-    margin: 2rem 0;
+    display: block;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+    margin-left: auto;
+    margin-right: auto;
+    border-style: inset;
+    border-width: 1px;
+    border-color: #0F172A;
+  }
+
+  a:link {
+    text-decoration: underline;
+    cursor: auto;
   }
 }
 
 .bubble-menu {
   display: flex;
-  background-color: #0D0D0D;
-  padding: 0.2rem;
+  background-color: #0F172A;
   border-radius: 0.3rem;
 
   button {
     border: none;
     background: none;
     color: #FFF;
-    font-size: 0.85rem;
-    font-weight: 500;
+    font-size: 1rem;
     opacity: 0.6;
+    padding: 0.1rem 0.5rem;
 
     &:hover,
     &.is-active {
