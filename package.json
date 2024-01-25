@@ -41,6 +41,7 @@
 	"dependencies": {
 		"@tiptap/core": "^2.1.16",
 		"@tiptap/extension-bubble-menu": "^2.1.16",
+		"@tiptap/extension-link": "^2.1.16",
 		"@tiptap/pm": "^2.1.16",
 		"@tiptap/starter-kit": "^2.1.16",
 		"bits-ui": "^0.15.1",

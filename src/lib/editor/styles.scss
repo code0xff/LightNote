@@ -63,6 +63,7 @@
   }
 
   code {
+    font-family: monospace;
     background-color: rgba(#616161, 0.1);
     color: #616161;
   }
@@ -81,7 +82,6 @@
       color: inherit;
       padding: 0;
       background: none;
-      font-size: 0.8rem;
     }
   }
 
@@ -104,6 +104,11 @@
     border-style: inset;
     border-width: 1px;
     border-color: #0F172A;
+  }
+
+  a:link {
+    text-decoration: underline;
+    cursor: auto;
   }
 }
 
