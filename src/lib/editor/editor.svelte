@@ -59,6 +59,7 @@
 		}
 		const html = editor.getHTML();
 		const style = `
+			<meta name="viewport" content="width=device-width, initial-scale=1">
 			<style>
 				code {
 					font-family: monospace;
