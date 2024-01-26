@@ -126,48 +126,48 @@
 				variant={editor.isActive('paragraph') ? 'default' : 'secondary'}
 				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				p
+				P
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
 				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'secondary'}
 				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				h1
+				H1
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
 				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'secondary'}
 				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				h2
+				H2
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
 				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'secondary'}
 				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				h3
+				H3
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
 				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
 				class="mt-0.5 h-6 px-2 text-sm max-md:hidden"
-				>-ul
+				>-UL
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
 				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
 				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				1.ol
+				1.OL
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
 				variant={editor.isActive('codeBlock') ? 'default' : 'secondary'}
 				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				{'{...}'}
+				{'{..}'}
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBlockquote().run()}
@@ -180,19 +180,19 @@
 				on:click={() => editor.chain().focus().setHorizontalRule().run()}
 				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				---
+				--
 			</Button>
 			<Button
 				on:click={setLink}
 				variant={editor.isActive('link') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm underline">{'link'}</Button
+				class="my-0.5 h-6 px-2 text-sm underline">L</Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().unsetLink().run()}
 				disabled={!editor.isActive('link')}
 				class="my-0.5 h-6 px-2 text-sm"
 			>
-				<strike>{'link'}</strike>
+				<strike>{'L'}</strike>
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().undo().run()}
