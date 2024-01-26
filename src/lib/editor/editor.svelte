@@ -119,7 +119,7 @@
 				variant={editor.isActive('code') ? 'default' : 'secondary'}
 				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
 			>
-				{'{}'}
+				<code>C</code>
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setParagraph().run()}
@@ -238,6 +238,12 @@
 			class={editor.isActive('strike') ? 'is-active' : ''}
 		>
 			<strike>S</strike>
+		</button>
+		<button
+			on:click={() => editor.chain().focus().toggleCode().run()}
+			class={editor.isActive('code') ? 'is-active' : ''}
+		>
+			<code>C</code>
 		</button>
 	{/if}
 </div>
