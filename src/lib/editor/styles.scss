@@ -72,11 +72,10 @@
     display: block;
     font-family: monospace;
     white-space: pre;
-    background: #0F172A;
-    color: #FFF;
+    background: rgba(#616161, 0.1);
+    color: #616161;
     margin: 1em 0;
     padding: 1rem;
-    border-radius: 0.5rem;
 
     code {
       color: inherit;
@@ -92,7 +91,7 @@
 
   blockquote {
     padding-left: 1rem;
-    border-left: 2px solid #0F172A;
+    border-left: 2px solid #616161;
   }
 
   hr {
@@ -103,7 +102,7 @@
     margin-right: auto;
     border-style: inset;
     border-width: 1px;
-    border-color: #0F172A;
+    border-color: #616161;
   }
 
   a:link {
