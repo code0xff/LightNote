@@ -113,11 +113,16 @@
 		}
 		editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
 	}
+
+	function clearContent() {
+		editor.commands.clearContent();
+	}
 </script>
 
 {#if editor}
 	<div>
 		<nav class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[#0F172A] max-md:px-2">
+			<Button on:click={clearContent} class="my-0.5 h-6 px-2 text-sm">N</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
