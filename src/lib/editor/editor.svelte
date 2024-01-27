@@ -22,7 +22,8 @@
 			element: element,
 			editorProps: {
 				attributes: {
-					class: 'border-2 border-[#0F172A] rounded-lg mt-9 max-md:p-2 p-4 outline-none'
+					class:
+						'border-2 border-[#0F172A] max-md:border-none rounded-lg mt-9 max-md:p-2 p-4 outline-none'
 				}
 			},
 			extensions: [
