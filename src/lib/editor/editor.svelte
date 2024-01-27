@@ -116,6 +116,7 @@
 
 	function clearContent() {
 		editor.commands.clearContent();
+		editor.commands.focus();
 	}
 </script>
 
