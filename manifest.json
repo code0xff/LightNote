@@ -1,7 +1,7 @@
 {
   "name": "Note",
   "short_name": "note",
-  "start_url": "/",
+  "start_url": "/note2/",
   "display": "standalone",
   "theme_color": "#ffffff",
   "background_color": "#000000",
