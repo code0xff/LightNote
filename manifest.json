@@ -16,5 +16,15 @@
       "src": "android-chrome-512x512.png",
       "type": "image/png"
     }
-  ]
+  ],
+  "screenshots": [
+    {
+     "src": "screenshot.png",
+      "sizes": "640x320",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Wonder Widgets"
+    }
+  ],
+  "description": "Simple note web app"
 }
