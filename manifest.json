@@ -1,6 +1,6 @@
 {
   "name": "Note",
-  "short_name": "note",
+  "short_name": "Note",
   "start_url": "/note2/",
   "display": "standalone",
   "theme_color": "#ffffff",
@@ -17,14 +17,5 @@
       "type": "image/png"
     }
   ],
-  "screenshots": [
-    {
-     "src": "screenshot.png",
-      "sizes": "640x320",
-      "type": "image/png",
-      "form_factor": "wide",
-      "label": "Wonder Widgets"
-    }
-  ],
-  "description": "Simple note web app"
+  "description": "Note"
 }
