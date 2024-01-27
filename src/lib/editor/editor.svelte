@@ -23,7 +23,7 @@
 			editorProps: {
 				attributes: {
 					class:
-						'border-2 border-[#0F172A] max-md:border-none rounded-lg mt-9 max-md:p-2 p-4 outline-none'
+						'border-2 border-[color:hsl(222.2,84%,4.9%)] dark:border-white max-md:border-none rounded-lg mt-9 max-md:p-2 p-4 outline-none'
 				}
 			},
 			extensions: [
@@ -122,7 +122,9 @@
 
 {#if editor}
 	<div>
-		<nav class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[#0F172A] max-md:px-2">
+		<nav
+			class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[color:hsl(222.2,84%,4.9%)] max-md:px-2"
+		>
 			<Button on:click={clearContent} class="my-0.5 h-6 px-2 text-sm">N</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
