@@ -53,8 +53,9 @@
 		"bits-ui": "^0.15.1",
 		"clsx": "^2.1.0",
 		"html2pdf.js": "^0.10.1",
+		"lucide-svelte": "^0.316.0",
 		"mode-watcher": "^0.1.2",
-		"tailwind-merge": "^2.2.0",
+		"tailwind-merge": "^2.2.1",
 		"tailwind-variants": "^0.1.20",
 		"workbox-precaching": "^7.0.0"
 	}

@@ -142,7 +142,7 @@
 {#if editor}
 	<div>
 		<nav
-			class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[color:hsl(222.2,84%,4.9%)] max-md:px-2"
+			class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[color:hsl(240,10%,3.9%)] max-md:px-2"
 		>
 			<Button on:click={clearContent} class="my-0.5 h-6 px-2 text-sm max-lg:hidden">N</Button>
 			<Button
