@@ -8,6 +8,8 @@
 	import Link from '@tiptap/extension-link';
 	import { Button } from '@/lib/components/ui/button';
 	import { toggleMode } from 'mode-watcher';
+	import Image from '@tiptap/extension-image';
+	import TextAlign from '@tiptap/extension-text-align';
 
 	let element: Element;
 	let editor: Editor;
@@ -34,6 +36,10 @@
 				Link.configure({
 					openOnClick: false,
 					autolink: true
+				}),
+				Image,
+				TextAlign.configure({
+					types: ['heading', 'paragraph']
 				})
 			],
 			onUpdate({ editor }) {
@@ -107,7 +113,7 @@
 		if (url === null) {
 			return;
 		}
-		if (url === '') {
+		if (url.trim().length === 0) {
 			editor.chain().focus().extendMarkRange('link').unsetLink().run();
 			return;
 		}
@@ -118,6 +124,14 @@
 		editor.commands.clearContent();
 		editor.commands.focus();
 	}
+
+	function addImage() {
+		const url = window.prompt('Please insert image url');
+		if (url === null || url.trim().length === 0) {
+			return;
+		}
+		editor.chain().focus().setImage({ src: url }).run();
+	}
 </script>
 
 {#if editor}
@@ -125,12 +139,12 @@
 		<nav
 			class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[color:hsl(222.2,84%,4.9%)] max-md:px-2"
 		>
-			<Button on:click={clearContent} class="my-0.5 h-6 px-2 text-sm">N</Button>
+			<Button on:click={clearContent} class="my-0.5 h-6 px-2 text-sm max-lg:hidden">N</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
 				variant={editor.isActive('bold') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				<strong>B</strong>
 			</Button>
@@ -138,7 +152,7 @@
 				on:click={() => editor.chain().focus().toggleItalic().run()}
 				disabled={!editor.can().chain().focus().toggleItalic().run()}
 				variant={editor.isActive('italic') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				<i>I</i>
 			</Button>
@@ -146,7 +160,7 @@
 				on:click={() => editor.chain().focus().toggleStrike().run()}
 				disabled={!editor.can().chain().focus().toggleStrike().run()}
 				variant={editor.isActive('strike') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				<strike>S</strike>
 			</Button>
@@ -154,68 +168,89 @@
 				on:click={() => editor.chain().focus().toggleCode().run()}
 				disabled={!editor.can().chain().focus().toggleCode().run()}
 				variant={editor.isActive('code') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				<code>C</code>
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setParagraph().run()}
 				variant={editor.isActive('paragraph') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				P
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
 				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				H1
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
 				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				H2
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
 				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				H3
 			</Button>
 			<Button
+				on:click={() => editor.chain().focus().setTextAlign('left').run()}
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				variant={editor.isActive({ textAlign: 'left' }) ? 'default' : 'secondary'}
+			>
+				AL
+			</Button>
+			<Button
+				on:click={() => editor.chain().focus().setTextAlign('center').run()}
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				variant={editor.isActive({ textAlign: 'center' }) ? 'default' : 'secondary'}
+			>
+				AC
+			</Button>
+			<Button
+				on:click={() => editor.chain().focus().setTextAlign('right').run()}
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				variant={editor.isActive({ textAlign: 'right' }) ? 'default' : 'secondary'}
+			>
+				AR
+			</Button>
+			<Button
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
 				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
-				class="mt-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="mt-0.5 h-6 px-2 text-sm max-lg:hidden"
 				>*UL
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
 				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				1.OL
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
 				variant={editor.isActive('codeBlock') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				{'{..}'}
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBlockquote().run()}
 				variant={editor.isActive('blockquote') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				{'>..'}
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setHorizontalRule().run()}
-				class="my-0.5 h-6 px-2 text-sm max-md:hidden"
+				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
 			>
 				--
 			</Button>
@@ -227,10 +262,11 @@
 			<Button
 				on:click={() => editor.chain().focus().unsetLink().run()}
 				disabled={!editor.isActive('link')}
-				class="my-0.5 h-6 px-2 text-sm underline"
+				class="my-0.5 h-6 px-2 text-sm underline max-lg:hidden"
 			>
 				<strike>{'L'}</strike>
 			</Button>
+			<Button on:click={addImage} class="my-0.5 h-6 px-2 text-sm">I</Button>
 			<Button
 				on:click={() => editor.chain().focus().undo().run()}
 				disabled={!editor.can().chain().focus().undo().run()}

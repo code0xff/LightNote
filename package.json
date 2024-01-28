@@ -44,7 +44,9 @@
 	"dependencies": {
 		"@tiptap/core": "^2.1.16",
 		"@tiptap/extension-bubble-menu": "^2.1.16",
+		"@tiptap/extension-image": "^2.1.16",
 		"@tiptap/extension-link": "^2.1.16",
+		"@tiptap/extension-text-align": "^2.1.16",
 		"@tiptap/pm": "^2.1.16",
 		"@tiptap/starter-kit": "^2.1.16",
 		"bits-ui": "^0.15.1",
@@ -52,6 +54,7 @@
 		"html2pdf.js": "^0.10.1",
 		"mode-watcher": "^0.1.2",
 		"tailwind-merge": "^2.2.0",
-		"tailwind-variants": "^0.1.20"
+		"tailwind-variants": "^0.1.20",
+		"workbox-precaching": "^7.0.0"
 	}
 }
