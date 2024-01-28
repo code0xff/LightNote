@@ -88,7 +88,7 @@
 			</style>
 		`;
 		const element = document.createElement('a');
-		const blob = new Blob([style, html], { type: 'text/html' });
+		const blob = new Blob([style, html], { type: 'text/html;charset=utf-8' });
 		element.setAttribute('href', window.URL.createObjectURL(blob));
 		element.setAttribute('download', download);
 		element.click();
