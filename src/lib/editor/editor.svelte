@@ -37,7 +37,9 @@
 					openOnClick: false,
 					autolink: true
 				}),
-				Image,
+				Image.configure({
+					inline: true
+				}),
 				TextAlign.configure({
 					types: ['heading', 'paragraph']
 				})
