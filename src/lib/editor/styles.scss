@@ -122,7 +122,7 @@
 
 .bubble-menu {
   display: flex;
-  background-color: hsl(var(--secondary) / var(--tw-bg-opacity));
+  background-color: hsl(240 10% 3.9%);
   border-radius: 0.3rem;
 
   button {
@@ -136,6 +136,16 @@
     &:hover,
     &.is-active {
       opacity: 1;
+    }
+  }
+}
+
+.dark {
+  .bubble-menu {
+    background-color: hsl(0 0% 100%);
+
+    button {
+      color: hsl(240 10% 3.9%);
     }
   }
 }
