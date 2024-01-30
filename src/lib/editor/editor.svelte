@@ -11,6 +11,33 @@
 	import Image from '@tiptap/extension-image';
 	import TextAlign from '@tiptap/extension-text-align';
 	import Placeholder from '@tiptap/extension-placeholder';
+	import {
+		AlignCenter,
+		AlignLeft,
+		AlignRight,
+		Bold,
+		BookPlus,
+		Braces,
+		Code,
+		FileUp,
+		Heading1,
+		Heading2,
+		Heading3,
+		ImagePlus,
+		Italic,
+		Link2,
+		Link2Off,
+		List,
+		ListOrdered,
+		Pilcrow,
+		Redo,
+		Save,
+		SeparatorHorizontal,
+		Strikethrough,
+		SunMoon,
+		TextQuote,
+		Undo
+	} from 'lucide-svelte';
 
 	let element: Element;
 	let editor: Editor;
@@ -25,7 +52,7 @@
 			element: element,
 			editorProps: {
 				attributes: {
-					class: 'mt-9 max-md:p-2 p-4 outline-none'
+					class: 'mt-9 max-md:h-8 px-2 p-4 outline-none'
 				}
 			},
 			extensions: [
@@ -149,185 +176,190 @@
 		<nav
 			class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[color:hsl(240,10%,3.9%)] max-md:px-2"
 		>
-			<Button on:click={clearContent} class="my-0.5 h-6 px-2 text-sm max-lg:hidden">N</Button>
+			<Button on:click={clearContent} class="h-8 px-2 max-lg:hidden"
+				><BookPlus class="h-4 w-4" /></Button
+			>
 			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
 				variant={editor.isActive('bold') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				<strong>B</strong>
+				<Bold class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleItalic().run()}
 				disabled={!editor.can().chain().focus().toggleItalic().run()}
 				variant={editor.isActive('italic') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				<i>I</i>
+				<Italic class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleStrike().run()}
 				disabled={!editor.can().chain().focus().toggleStrike().run()}
 				variant={editor.isActive('strike') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				<strike>S</strike>
+				<Strikethrough class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCode().run()}
 				disabled={!editor.can().chain().focus().toggleCode().run()}
 				variant={editor.isActive('code') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				<code>C</code>
+				<Code class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setParagraph().run()}
 				variant={editor.isActive('paragraph') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				P
+				<Pilcrow class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
 				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				H1
+				<Heading1 class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
 				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				H2
+				<Heading2 class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
 				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				H3
+				<Heading3 class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setTextAlign('left').run()}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 				variant={editor.isActive({ textAlign: 'left' }) ? 'default' : 'secondary'}
 			>
-				AL
+				<AlignLeft class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setTextAlign('center').run()}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 				variant={editor.isActive({ textAlign: 'center' }) ? 'default' : 'secondary'}
 			>
-				AC
+				<AlignCenter class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setTextAlign('right').run()}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 				variant={editor.isActive({ textAlign: 'right' }) ? 'default' : 'secondary'}
 			>
-				AR
+				<AlignRight class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
 				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
-				class="mt-0.5 h-6 px-2 text-sm max-lg:hidden"
-				>*UL
+				class="h-8 px-2 max-lg:hidden"
+				><List class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
 				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				1.OL
+				<ListOrdered class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
 				variant={editor.isActive('codeBlock') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				{'{..}'}
+				<Braces class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBlockquote().run()}
 				variant={editor.isActive('blockquote') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				{'>..'}
+				<TextQuote class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setHorizontalRule().run()}
-				class="my-0.5 h-6 px-2 text-sm max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				--
+				<SeparatorHorizontal class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={setLink}
 				variant={editor.isActive('link') ? 'default' : 'secondary'}
-				class="my-0.5 h-6 px-2 text-sm underline">L</Button
+				class="h-8 px-2"><Link2 class="h-4 w-4" /></Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().unsetLink().run()}
 				disabled={!editor.isActive('link')}
-				class="my-0.5 h-6 px-2 text-sm underline max-lg:hidden"
+				class="h-8 px-2 max-lg:hidden"
 			>
-				<strike>{'L'}</strike>
+				<Link2Off class="h-4 w-4" />
 			</Button>
-			<Button on:click={addImage} class="my-0.5 h-6 px-2 text-sm">I</Button>
+			<Button on:click={addImage} class="h-8 px-2"><ImagePlus class="h-4 w-4" /></Button>
 			<Button
 				on:click={() => editor.chain().focus().undo().run()}
 				disabled={!editor.can().chain().focus().undo().run()}
-				class="my-0.5 h-6 px-2 text-sm"
+				class="h-8 px-2"
 			>
-				←
+				<Undo class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().redo().run()}
 				disabled={!editor.can().chain().focus().redo().run()}
-				class="my-0.5 h-6 px-2 text-sm"
+				class="h-8 px-2"
 			>
-				→
+				<Redo class="h-4 w-4" />
 			</Button>
-			<Button on:click={download} class="my-0.5 h-6 px-2 text-sm">↓</Button>
+			<Button on:click={download} class="h-8 px-2"><Save class="h-4 w-4" /></Button>
 			<input type="file" id="selectedFile" style="display: none;" bind:files on:change={upload} />
-			<Button
-				on:click={() => document.getElementById('selectedFile')?.click()}
-				class="my-0.5 h-6 px-2 text-sm">↑</Button
+			<Button on:click={() => document.getElementById('selectedFile')?.click()} class="h-8 px-2"
+				><FileUp class="h-4 w-4" /></Button
 			>
-			<Button on:click={toggleMode} class="my-0.5 h-6 px-2 text-sm">⛯</Button>
+			<Button on:click={toggleMode} class="h-8 px-2"><SunMoon class="h-4 w-4" /></Button>
 		</nav>
 	</div>
 {/if}
 
-<div class="bubble-menu" bind:this={bubbleMenu}>
+<div class="bubble-menu rounded-md" bind:this={bubbleMenu}>
 	{#if editor}
-		<button
+		<Button
 			on:click={() => editor.chain().focus().toggleBold().run()}
-			class={editor.isActive('bold') ? 'is-active' : ''}
+			variant={editor.isActive('bold') ? 'default' : 'secondary'}
+			class="h-8 px-2"
 		>
-			<strong>B</strong>
-		</button>
-		<button
+			<Bold class="h-4 w-4" />
+		</Button>
+		<Button
 			on:click={() => editor.chain().focus().toggleItalic().run()}
-			class={editor.isActive('italic') ? 'is-active' : ''}
+			variant={editor.isActive('italic') ? 'default' : 'secondary'}
+			class="h-8 px-2"
 		>
-			<i>I</i>
-		</button>
-		<button
+			<Italic class="h-4 w-4" />
+		</Button>
+		<Button
 			on:click={() => editor.chain().focus().toggleStrike().run()}
-			class={editor.isActive('strike') ? 'is-active' : ''}
+			variant={editor.isActive('strike') ? 'default' : 'secondary'}
+			class="h-8 px-2"
 		>
-			<strike>S</strike>
-		</button>
-		<button
+			<Strikethrough class="h-4 w-4" />
+		</Button>
+		<Button
 			on:click={() => editor.chain().focus().toggleCode().run()}
-			class={editor.isActive('code') ? 'is-active' : ''}
+			variant={editor.isActive('code') ? 'default' : 'secondary'}
+			class="h-8 px-2 max-lg:hidden"
 		>
-			<code>C</code>
-		</button>
+			<Code class="h-4 w-4" />
+		</Button>
 	{/if}
 </div>
 
