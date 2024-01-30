@@ -97,33 +97,38 @@
 		}
 		const html = editor.getHTML();
 		const style = `
-			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<meta charset="utf-8">
-			<style>
-				code {
-					font-family: monospace;
-					background-color: rgb(97, 97, 97, 0.1);
-					color: #616161;
-				}
-				pre {
-					display: block;
-					font-family: monospace;
-					white-space: pre;
-					background: rgb(97, 97, 97, 0.1);
-					color: #616161;
-					margin: 1em 0;
-					padding: 1rem;
-				}
-				pre > code {
-					color: inherit;
-					padding: 0;
-					background: none;
-				}
-				blockquote {
-					padding-left: 1rem;
-					border-left: 2px solid #616161;
-				}
-			</style>
+			<head>
+				<meta name="viewport" content="width=device-width, initial-scale=1">
+				<meta charset="utf-8">
+				<style>
+					body {
+						font-family: ui-sans-serif, system-ui, sans-serif;
+					}
+					code {
+						font-family: monospace;
+						background-color: rgb(97, 97, 97, 0.1);
+						color: #616161;
+					}
+					pre {
+						display: block;
+						font-family: monospace;
+						white-space: pre;
+						background: rgb(97, 97, 97, 0.1);
+						color: #616161;
+						margin: 1em 0;
+						padding: 1rem;
+					}
+					pre > code {
+						color: inherit;
+						padding: 0;
+						background: none;
+					}
+					blockquote {
+						padding-left: 1rem;
+						border-left: 2px solid #616161;
+					}
+				</style>
+			</head>
 		`;
 		const element = document.createElement('a');
 		const blob = new Blob([style, html], { type: 'text/html;charset=utf-8' });
