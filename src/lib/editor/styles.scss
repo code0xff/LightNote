@@ -123,19 +123,4 @@
 .bubble-menu {
   display: flex;
   background-color: hsl(var(--secondary) / var(--tw-bg-opacity));
-  border-radius: 0.3rem;
-
-  button {
-    border: none;
-    background: none;
-    color: #FFF;
-    font-size: 1rem;
-    opacity: 0.6;
-    padding: 0.1rem 0.5rem;
-
-    &:hover,
-    &.is-active {
-      opacity: 1;
-    }
-  }
 }
