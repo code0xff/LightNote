@@ -42,8 +42,10 @@
 	},
 	"type": "module",
 	"dependencies": {
+		"@hocuspocus/provider": "^2.9.0",
 		"@tiptap/core": "^2.1.16",
 		"@tiptap/extension-bubble-menu": "^2.1.16",
+		"@tiptap/extension-collaboration": "^2.2.1",
 		"@tiptap/extension-image": "^2.1.16",
 		"@tiptap/extension-link": "^2.1.16",
 		"@tiptap/extension-placeholder": "^2.1.16",
@@ -57,6 +59,7 @@
 		"mode-watcher": "^0.1.2",
 		"tailwind-merge": "^2.2.1",
 		"tailwind-variants": "^0.1.20",
-		"workbox-precaching": "^7.0.0"
+		"workbox-precaching": "^7.0.0",
+		"y-prosemirror": "^1.2.2"
 	}
 }

@@ -1,16 +1,10 @@
 <script lang="ts">
 	import './styles.scss';
 
-	import StarterKit from '@tiptap/starter-kit';
-	import { Editor } from '@tiptap/core';
+	import { Editor, type Extensions } from '@tiptap/core';
 	import { onMount } from 'svelte';
-	import BubbleMenu from '@tiptap/extension-bubble-menu';
-	import Link from '@tiptap/extension-link';
 	import { Button } from '@/lib/components/ui/button';
 	import { toggleMode } from 'mode-watcher';
-	import Image from '@tiptap/extension-image';
-	import TextAlign from '@tiptap/extension-text-align';
-	import Placeholder from '@tiptap/extension-placeholder';
 	import {
 		AlignCenter,
 		AlignLeft,
@@ -36,36 +30,43 @@
 		Strikethrough,
 		SunMoon,
 		TextQuote,
-		Undo
+		Undo,
+		ScreenShare,
+		ScreenShareOff
 	} from 'lucide-svelte';
-	import { defaultContent } from './constants';
 	import { addImage, clearContent, download, setLink, upload } from './editor';
+	import { getExtensions } from './extensions';
+	import { getExtensionsWithCol } from './collaboration';
+	import { defaultContent } from './constants';
+	import type { HocuspocusProvider } from '@hocuspocus/provider';
 
 	let element: Element;
 	let editor: Editor;
-	let bubbleMenu: any;
+	let bubbleMenu: HTMLElement;
 	let files: FileList;
+	let content: string = '';
+	let provider: HocuspocusProvider | null;
 
 	onMount(async () => {
-		const content = localStorage.getItem('auto-saved') ?? defaultContent;
-		const extensions = [
-			StarterKit,
-			BubbleMenu.configure({
-				element: bubbleMenu
-			}),
-			Link.configure({
-				openOnClick: false,
-				autolink: true
-			}),
-			Image.configure({
-				inline: true
-			}),
-			TextAlign.configure({
-				types: ['heading', 'paragraph']
-			}),
-			Placeholder
-		];
+		const collaboration = localStorage.getItem('collaboration');
+		let extensions: Extensions;
 
+		if (collaboration !== null) {
+			try {
+				const { url, name } = JSON.parse(collaboration);
+				const res = getExtensionsWithCol(url, name, bubbleMenu);
+				provider = res.provider;
+				extensions = res.extensions;
+			} catch (e: any) {
+				console.error(e);
+
+				extensions = getExtensions(bubbleMenu);
+				content = localStorage.getItem('auto-saved') ?? defaultContent;
+			}
+		} else {
+			extensions = getExtensions(bubbleMenu);
+			content = localStorage.getItem('auto-saved') ?? defaultContent;
+		}
 		editor = new Editor({
 			element: element,
 			editorProps: {
@@ -89,6 +90,28 @@
 		});
 		editor.commands.focus();
 	});
+
+	function startShare() {
+		const data = window.prompt('Please insert collaboration data');
+		if (!data) {
+			return;
+		}
+		try {
+			const { url, name } = JSON.parse(data);
+			localStorage.setItem('collaboration', data);
+			location.reload();
+		} catch (e: any) {
+			console.error(e);
+		}
+	}
+
+	function endShare() {
+		localStorage.removeItem('collaboration');
+		if (provider && provider.isConnected) {
+			window.alert('Disconnecting...');
+			location.reload();
+		}
+	}
 </script>
 
 {#if editor}
@@ -254,6 +277,12 @@
 			/>
 			<Button on:click={() => document.getElementById('selectedFile')?.click()} class="h-8 px-2"
 				><FileUp class="h-4 w-4" /></Button
+			>
+			<Button on:click={startShare} class="h-8 px-2">
+				<ScreenShare class="h-4 w-4" />
+			</Button>
+			<Button on:click={endShare} disabled={!provider || !provider.isConnected} class="h-8 px-2"
+				><ScreenShareOff class="h-4 w-4" /></Button
 			>
 			<Button on:click={toggleMode} class="h-8 px-2"><SunMoon class="h-4 w-4" /></Button>
 		</nav>
