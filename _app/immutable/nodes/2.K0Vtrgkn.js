@@ -114,7 +114,7 @@ See the LICENSE file in the root directory of this source tree.
 					pre {
 						display: block;
 						font-family: monospace;
-						white-space: pre;
+				    white-space: pre-wrap;
 						background: rgb(97, 97, 97, 0.1);
 						color: #616161;
 						margin: 1em 0;
