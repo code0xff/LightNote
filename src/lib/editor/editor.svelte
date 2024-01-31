@@ -71,7 +71,7 @@
 			element: element,
 			editorProps: {
 				attributes: {
-					class: 'mt-9 max-md:h-8 px-2 p-4 outline-none'
+					class: 'mt-12 p-6 max-md:p-4 outline-none'
 				}
 			},
 			extensions,
@@ -117,7 +117,7 @@
 {#if editor}
 	<div>
 		<nav
-			class="fixed top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[color:hsl(240,10%,3.9%)] max-md:px-2"
+			class="fixed left-0 top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[color:hsl(240,10%,3.9%)] max-md:px-2"
 		>
 			<Button on:click={() => clearContent(editor)} class="h-8 px-2 max-lg:hidden"
 				><BookPlus class="h-4 w-4" /></Button
@@ -322,4 +322,4 @@
 	{/if}
 </div>
 
-<div bind:this={element} class="p-4 max-md:px-2 max-md:pb-2 max-md:pt-4" />
+<div bind:this={element} />
