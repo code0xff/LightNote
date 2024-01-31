@@ -1,7 +1,7 @@
 <script>
-	import Tiptap from '$lib/editor/editor.svelte';
+	import Login from '@/lib/login/login.svelte';
 </script>
 
 <main>
-	<Tiptap />
+	<Login />
 </main>
