@@ -31,7 +31,7 @@
 		ListOrdered,
 		Pilcrow,
 		Redo,
-		Save,
+		FileDown,
 		SeparatorHorizontal,
 		Strikethrough,
 		SunMoon,
@@ -320,7 +320,7 @@
 			>
 				<Redo class="h-4 w-4" />
 			</Button>
-			<Button on:click={download} class="h-8 px-2"><Save class="h-4 w-4" /></Button>
+			<Button on:click={download} class="h-8 px-2"><FileDown class="h-4 w-4" /></Button>
 			<input type="file" id="selectedFile" style="display: none;" bind:files on:change={upload} />
 			<Button on:click={() => document.getElementById('selectedFile')?.click()} class="h-8 px-2"
 				><FileUp class="h-4 w-4" /></Button
