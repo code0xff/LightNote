@@ -73,8 +73,7 @@
 				console.error(e);
 
 				localStorage.removeItem('collab');
-				extensions = getExtensions(bubbleMenu);
-				content = localStorage.getItem('auto-saved') ?? defaultContent;
+				location.reload();
 			}
 		} else {
 			extensions = getExtensions(bubbleMenu);
