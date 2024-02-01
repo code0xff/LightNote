@@ -48,12 +48,12 @@
 	let provider: HocuspocusProvider | null;
 
 	onMount(async () => {
-		const collaboration = localStorage.getItem('collaboration');
+		const metadata = localStorage.getItem('collaboration');
 		let extensions: Extensions;
 
-		if (collaboration !== null) {
+		if (metadata !== null) {
 			try {
-				const { url, name } = JSON.parse(collaboration);
+				const { url, name } = JSON.parse(metadata);
 				const res = getExtensionsWithCol(url, name, bubbleMenu);
 				provider = res.provider;
 				extensions = res.extensions;
@@ -92,13 +92,13 @@
 	});
 
 	function startShare() {
-		const data = window.prompt('Please insert collaboration data');
-		if (!data) {
+		const metadata = window.prompt('Please insert metadata for collaboration');
+		if (!metadata) {
 			return;
 		}
 		try {
-			const { url, name } = JSON.parse(data);
-			localStorage.setItem('collaboration', data);
+			const { url, name } = JSON.parse(metadata);
+			localStorage.setItem('collaboration', metadata);
 			location.reload();
 		} catch (e: any) {
 			console.error(e);
