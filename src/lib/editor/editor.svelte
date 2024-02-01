@@ -69,7 +69,7 @@
 				await provider.connect();
 				extensions = getExtsWithCollab(provider, bubbleMenu);
 			} catch (e: any) {
-				window.alert(`Failed to start a collaboartion with ${metadata}`);
+				window.alert(`Failed to start a collaboration with ${metadata}`);
 				console.error(e);
 
 				localStorage.removeItem('collab');
