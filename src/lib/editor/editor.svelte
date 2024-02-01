@@ -92,7 +92,10 @@
 	});
 
 	function startShare() {
-		const metadata = window.prompt('Please insert metadata for collaboration');
+		const metadata = window.prompt(
+			'Please insert metadata for collaboration',
+			'{"url":"ws://localhost:1234","name":"collaboration"}'
+		);
 		if (!metadata) {
 			return;
 		}
