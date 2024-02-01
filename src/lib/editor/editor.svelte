@@ -36,32 +36,43 @@
 	} from 'lucide-svelte';
 	import { addImage, clearContent, download, setLink, upload } from './editor';
 	import { getExtensions } from './extensions';
-	import { getExtensionsWithCol } from './collaboration';
+	import { getExtsWithCollab } from './collab';
 	import { defaultContent } from './constants';
-	import type { HocuspocusProvider } from '@hocuspocus/provider';
+	import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
 
 	let element: Element;
 	let editor: Editor;
 	let bubbleMenu: HTMLElement;
 	let files: FileList;
 	let content: string = '';
-	let provider: HocuspocusProvider | null;
+	let provider: HocuspocusProvider;
 
 	onMount(async () => {
-		const metadata = localStorage.getItem('collaboration');
+		const metadata = localStorage.getItem('collab');
 		let extensions: Extensions;
 
-		if (metadata !== null) {
+		if (metadata) {
 			try {
 				const { url, name } = JSON.parse(metadata);
-				const res = getExtensionsWithCol(url, name, bubbleMenu);
-				provider = res.provider;
-				extensions = res.extensions;
+				const websocketProvider = new HocuspocusProviderWebsocket({
+					url,
+					maxAttempts: 2
+				});
+				provider = new HocuspocusProvider({
+					websocketProvider,
+					name,
+					onConnect() {
+						window.alert(`Connected to ${url}/${name}`);
+					},
+					connect: false
+				});
+				await provider.connect();
+				extensions = getExtsWithCollab(provider, bubbleMenu);
 			} catch (e: any) {
-				console.error(e);
 				window.alert(`Failed to start a collaboartion with ${metadata}`);
+				console.error(e);
 
-				localStorage.removeItem('collaboration');
+				localStorage.removeItem('collab');
 				extensions = getExtensions(bubbleMenu);
 				content = localStorage.getItem('auto-saved') ?? defaultContent;
 			}
@@ -93,27 +104,33 @@
 		editor.commands.focus();
 	});
 
-	function startShare() {
+	function startCollab() {
 		const metadata = window.prompt(
 			'Please insert metadata for collaboration',
-			'{"url":"ws://localhost:1234","name":"collaboration"}'
+			'{"url":"ws://localhost:1234","name":"example-document"}'
 		);
 		if (!metadata) {
 			return;
 		}
 		try {
 			const { url, name } = JSON.parse(metadata);
-			localStorage.setItem('collaboration', metadata);
+			if (!url) {
+				throw new Error('url does not exist on meatadata');
+			}
+			if (!name) {
+				throw new Error('name does not exist on meatadata');
+			}
+			localStorage.setItem('collab', metadata);
 			location.reload();
 		} catch (e: any) {
-			window.alert('Invalid metadata format');
 			console.error(e);
+			window.alert('Invalid metadata format');
 		}
 	}
 
-	function endShare() {
-		localStorage.removeItem('collaboration');
-		if (provider && provider.isConnected) {
+	function endCollab() {
+		localStorage.removeItem('collab');
+		if (provider) {
 			window.alert('Disconnecting...');
 			location.reload();
 		}
@@ -284,10 +301,10 @@
 			<Button on:click={() => document.getElementById('selectedFile')?.click()} class="h-8 px-2"
 				><FileUp class="h-4 w-4" /></Button
 			>
-			<Button on:click={startShare} class="h-8 px-2">
+			<Button on:click={startCollab} class="h-8 px-2">
 				<ScreenShare class="h-4 w-4" />
 			</Button>
-			<Button on:click={endShare} disabled={!provider || !provider.isConnected} class="h-8 px-2"
+			<Button on:click={endCollab} disabled={!provider} class="h-8 px-2"
 				><ScreenShareOff class="h-4 w-4" /></Button
 			>
 			<Button on:click={toggleMode} class="h-8 px-2"><SunMoon class="h-4 w-4" /></Button>
