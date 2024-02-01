@@ -86,7 +86,7 @@
 					class: 'mt-12 p-6 max-md:p-4 outline-none'
 				}
 			},
-			extensions,
+			extensions: extensions!,
 			onUpdate({ editor }) {
 				try {
 					localStorage.setItem('auto-saved', editor.getHTML());
