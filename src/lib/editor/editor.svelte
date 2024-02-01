@@ -59,7 +59,9 @@
 				extensions = res.extensions;
 			} catch (e: any) {
 				console.error(e);
+				window.alert(`Failed to start a collaboartion with ${metadata}`);
 
+				localStorage.removeItem('collaboration');
 				extensions = getExtensions(bubbleMenu);
 				content = localStorage.getItem('auto-saved') ?? defaultContent;
 			}
@@ -104,6 +106,7 @@
 			localStorage.setItem('collaboration', metadata);
 			location.reload();
 		} catch (e: any) {
+			window.alert('Invalid metadata format');
 			console.error(e);
 		}
 	}

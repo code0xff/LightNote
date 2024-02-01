@@ -6,7 +6,6 @@ import TextAlign from "@tiptap/extension-text-align";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Image from '@tiptap/extension-image';
-import { getExtensions } from "./extensions";
 
 export function getExtensionsWithCol(url: string, name: string, bubbleMenu: HTMLElement) {
   const provider = new HocuspocusProvider({
@@ -42,6 +41,6 @@ export function getExtensionsWithCol(url: string, name: string, bubbleMenu: HTML
       ]
     };
   } else {
-    return { provider: null, extensions: getExtensions(bubbleMenu) };
+    throw new Error(`Failed to connect to ${url}/${name}`)
   }
 }
