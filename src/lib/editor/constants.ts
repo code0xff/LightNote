@@ -11,7 +11,7 @@ export const htmlStyle = `
     code {
       font-family: monospace;
       background-color: rgb(97, 97, 97, 0.1);
-      color: #616161;
+      color: crimson;
     }
     pre {
       display: block;
