@@ -65,7 +65,7 @@
   code {
     font-family: monospace;
     background-color: rgba(#616161, 0.1);
-    color: #616161;
+    color: crimson;
   }
 
   pre {
@@ -123,4 +123,12 @@
 .bubble-menu {
   display: flex;
   background-color: hsl(var(--secondary) / var(--tw-bg-opacity));
+}
+
+.dark {
+  .tiptap {
+    pre {
+      color: white;
+    }
+  }
 }
