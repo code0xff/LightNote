@@ -2,7 +2,7 @@ import type { Editor } from "@tiptap/core";
 import { htmlStyle } from "./constants";
 
 export function download(editor: Editor) {
-  const defaultName = `note_${Date.now()}.html`;
+  const defaultName = `light_note_${Date.now()}.html`;
   let download = window.prompt('Please insert file name', defaultName);
   if (download === null || download.trim().length === 0) {
     download = defaultName;
