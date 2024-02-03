@@ -337,7 +337,7 @@
 		<Button
 			on:click={() => editor.chain().focus().toggleCode().run()}
 			variant={editor.isActive('code') ? 'default' : 'secondary'}
-			class="h-8 px-2 max-lg:hidden"
+			class="h-8 px-2"
 		>
 			<Code class="h-4 w-4" />
 		</Button>
