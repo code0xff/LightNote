@@ -1,6 +1,6 @@
 {
-  "name": "Note",
-  "short_name": "Note",
+  "name": "LightNote",
+  "short_name": "LightNote",
   "start_url": "/note2/",
   "display": "standalone",
   "theme_color": "hsl(240 10% 3.9%)",
@@ -17,5 +17,5 @@
       "type": "image/png"
     }
   ],
-  "description": "Note"
+  "description": "Light Note"
 }
