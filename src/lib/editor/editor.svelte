@@ -83,7 +83,7 @@
 			element: element,
 			editorProps: {
 				attributes: {
-					class: 'mt-12 p-6 max-md:p-4 outline-none'
+					class: 'md:mt-16 mt-12 md:w-[708px] md:py-16 md:px-0 md:mx-auto p-4 outline-none'
 				}
 			},
 			extensions: extensions!,
@@ -139,7 +139,7 @@
 {#if editor}
 	<div>
 		<nav
-			class="fixed left-0 top-0 z-10 w-full bg-white px-4 py-2 dark:bg-[color:hsl(240,10%,3.9%)] max-md:px-2"
+			class="fixed left-0 top-0 z-10 w-full bg-white py-4 text-center dark:bg-[color:hsl(240,10%,3.9%)] max-lg:px-4 max-lg:text-left max-md:p-2"
 		>
 			<Button on:click={() => clearContent(editor)} class="h-8 px-2 max-lg:hidden"
 				><BookPlus class="h-4 w-4" /></Button
