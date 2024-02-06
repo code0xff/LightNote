@@ -95,8 +95,15 @@ See the LICENSE file in the root directory of this source tree.
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta charset="utf-8">
   <style>
+    html {
+      margin: 0;
+      padding: 0;
+    }
     body {
       font-family: ui-sans-serif, system-ui, sans-serif;
+      margin: 0 auto;
+      padding: 4rem 0;
+      width: 708px;
     }
     code {
       font-family: monospace;
