@@ -13,6 +13,7 @@ export function download(editor: Editor) {
     return;
   }
 
+  localStorage.setItem('edited', download);
   let blob: Blob;
   if (download.endsWith('.html')) {
     const html = editor.getHTML();
