@@ -1,8 +1,9 @@
 import type { Editor } from "@tiptap/core";
 import { htmlStyle } from "./constants";
+import type { HocuspocusProvider } from "@hocuspocus/provider";
 
 export function download(editor: Editor) {
-  const fileName = localStorage.getItem('recently-edited') ?? `light_note_${Date.now()}.html`;
+  const fileName = localStorage.getItem('edited') ?? `light_note_${Date.now()}.html`;
   let download = window.prompt('Please insert file name', fileName);
   if (download === null) {
     return;
@@ -29,7 +30,7 @@ export function download(editor: Editor) {
 
 export async function upload(editor: Editor, files: FileList) {
   if (files) {
-    localStorage.setItem('recently-edited', files[0].name);
+    localStorage.setItem('edited', files[0].name);
     editor.commands.setContent(await files[0].text());
   }
 }
@@ -59,4 +60,37 @@ export function addImage(editor: Editor) {
     return;
   }
   editor.chain().focus().setImage({ src: url }).run();
+}
+
+export function startCollab() {
+  const metadata = window.prompt(
+    'Please insert metadata for collaboration',
+    localStorage.getItem('collabed') ?? '{"url":"ws://localhost:1234","name":"example-document"}'
+  );
+  if (!metadata) {
+    return;
+  }
+  try {
+    const { url, name } = JSON.parse(metadata);
+    if (!url) {
+      throw new Error('url does not exist on meatadata');
+    }
+    if (!name) {
+      throw new Error('name does not exist on meatadata');
+    }
+    localStorage.setItem('collab', metadata);
+    localStorage.setItem('collabed', metadata);
+    location.reload();
+  } catch (e: any) {
+    console.error(e);
+    window.alert('Invalid metadata format');
+  }
+}
+
+export function endCollab(provider: HocuspocusProvider) {
+  localStorage.removeItem('collab');
+  if (provider) {
+    window.alert('Disconnecting...');
+    location.reload();
+  }
 }

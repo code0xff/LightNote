@@ -34,7 +34,15 @@
 		ScreenShare,
 		ScreenShareOff
 	} from 'lucide-svelte';
-	import { addImage, clearContent, download, setLink, upload } from './editor';
+	import {
+		addImage,
+		clearContent,
+		download,
+		endCollab,
+		setLink,
+		startCollab,
+		upload
+	} from './editor';
 	import { getExtensions } from './extensions';
 	import { getExtsWithCollab } from './collab';
 	import { defaultContent } from './constants';
@@ -102,38 +110,6 @@
 		});
 		editor.commands.focus();
 	});
-
-	function startCollab() {
-		const metadata = window.prompt(
-			'Please insert metadata for collaboration',
-			'{"url":"ws://localhost:1234","name":"example-document"}'
-		);
-		if (!metadata) {
-			return;
-		}
-		try {
-			const { url, name } = JSON.parse(metadata);
-			if (!url) {
-				throw new Error('url does not exist on meatadata');
-			}
-			if (!name) {
-				throw new Error('name does not exist on meatadata');
-			}
-			localStorage.setItem('collab', metadata);
-			location.reload();
-		} catch (e: any) {
-			console.error(e);
-			window.alert('Invalid metadata format');
-		}
-	}
-
-	function endCollab() {
-		localStorage.removeItem('collab');
-		if (provider) {
-			window.alert('Disconnecting...');
-			location.reload();
-		}
-	}
 </script>
 
 {#if editor}
@@ -303,7 +279,7 @@
 			<Button on:click={startCollab} class="mx-0.5 h-8 px-2">
 				<ScreenShare class="h-4 w-4" />
 			</Button>
-			<Button on:click={endCollab} disabled={!provider} class="mx-0.5 h-8 px-2"
+			<Button on:click={() => endCollab(provider)} disabled={!provider} class="mx-0.5 h-8 px-2"
 				><ScreenShareOff class="h-4 w-4" /></Button
 			>
 			<Button on:click={toggleMode} class="ml-0.5 h-8 px-2"><SunMoon class="h-4 w-4" /></Button>
