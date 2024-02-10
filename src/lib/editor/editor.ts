@@ -74,18 +74,22 @@ export function startCollab() {
   try {
     const { url, name } = JSON.parse(metadata);
     if (!url) {
-      throw new Error('url does not exist on meatadata');
+      throw new Error('url does not exist on meatadata', { cause: 'InvalidMetadata' });
     }
     if (!name) {
-      throw new Error('name does not exist on meatadata');
+      throw new Error('name does not exist on meatadata', { cause: 'InvalidMetadata' });
     }
     localStorage.setItem('collab', metadata);
     localStorage.setItem('collabed', metadata);
     location.reload();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (e: any) {
+    if (e instanceof Error && e.cause === 'InvalidMetadata') {
+      window.alert(`Invalid metadata format: ${e.toString()}`);
+    } else {
+      window.alert(`Invalid metadata format: ${metadata}`);
+    }
     console.error(e);
-    window.alert(`Invalid metadata format: ${e.toString()}`);
   }
 }
 
