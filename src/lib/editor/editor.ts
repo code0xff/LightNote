@@ -4,8 +4,8 @@ import type { HocuspocusProvider } from "@hocuspocus/provider";
 
 export function download(editor: Editor) {
   const fileName = localStorage.getItem('edited') ?? `light_note_${Date.now()}.html`;
-  let download = window.prompt('Please insert file name', fileName);
-  if (download === null) {
+  const download = window.prompt('Please insert file name', fileName);
+  if (!download) {
     return;
   }
   if ((!download.endsWith('.html') && !download.endsWith('.txt')) || download.slice(0, download.lastIndexOf('.')).trim().length === 0) {
@@ -57,7 +57,7 @@ export function clearContent(editor: Editor) {
 
 export function addImage(editor: Editor) {
   const url = window.prompt('Please insert image url');
-  if (url === null || url.trim().length === 0) {
+  if (!url || url.trim().length === 0) {
     return;
   }
   editor.chain().focus().setImage({ src: url }).run();
@@ -82,9 +82,10 @@ export function startCollab() {
     localStorage.setItem('collab', metadata);
     localStorage.setItem('collabed', metadata);
     location.reload();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (e: any) {
     console.error(e);
-    window.alert('Invalid metadata format');
+    window.alert(`Invalid metadata format: ${e.toString()}`);
   }
 }
 

@@ -62,6 +62,12 @@
 		if (metadata) {
 			try {
 				const { url, name } = JSON.parse(metadata);
+				if (!url) {
+					throw new Error('url does not exist on meatadata');
+				}
+				if (!name) {
+					throw new Error('name does not exist on meatadata');
+				}
 				const websocketProvider = new HocuspocusProviderWebsocket({
 					url,
 					maxAttempts: 2
@@ -77,7 +83,7 @@
 				await provider.connect();
 				extensions = getExtsWithCollab(provider, bubbleMenu);
 			} catch (e: any) {
-				window.alert(`Failed to start a collaboration with ${metadata}`);
+				window.alert(`Failed to start a collaboration with ${metadata}: ${e.toString()}`);
 				console.error(e);
 
 				localStorage.removeItem('collab');
