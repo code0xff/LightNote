@@ -106,7 +106,7 @@ See the LICENSE file in the root directory of this source tree.
   use the provided save function to store them as HTML files. Additionally, you can upload these files to continue
   editing.</p>
 <p>The theme supports both Light and Dark modes.</p>
-<p>If you want more features, please visit the tiptap documentation and extend the functionality through extensions.</p>
+<p>If you want more features, please visit the Tiptap documentation and extend the functionality through extensions.</p>
 <hr>
 <h1><code># H1</code>: H1</h1>
 <h2><code>## H2</code>: H2</h2>
