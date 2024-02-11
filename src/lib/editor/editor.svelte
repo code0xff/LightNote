@@ -101,7 +101,7 @@
 			element: element,
 			editorProps: {
 				attributes: {
-					class: 'mt-16 md:w-[708px] md:py-16 md:px-0 md:mx-auto p-4 outline-none'
+					class: 'mt-16 md:w-[708px] md:py-8 md:px-0 md:mx-auto p-4 outline-none'
 				}
 			},
 			extensions: extensions!,
