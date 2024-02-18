@@ -283,8 +283,9 @@
 				bind:files
 				on:change={() => upload(editor, files)}
 			/>
-			<Button on:click={() => document.getElementById('selectedFile')?.click()} class="h-8 px-2"
-				><FileUp class="mx-0.5 h-4 w-4" /></Button
+			<Button
+				on:click={() => document.getElementById('selectedFile')?.click()}
+				class="mx-0.5 h-8 px-2"><FileUp class="h-4 w-4" /></Button
 			>
 			<Button on:click={startCollab} class="mx-0.5 h-8 px-2">
 				<ScreenShare class="h-4 w-4" />
