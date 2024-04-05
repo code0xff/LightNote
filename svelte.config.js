@@ -18,7 +18,7 @@ const config = {
 			"@/*": "./src"
 		},
 		paths: {
-			base: dev ? "" : "/note2",
+			base: dev ? "" : "/LightNote",
 		}
 	}
 };
