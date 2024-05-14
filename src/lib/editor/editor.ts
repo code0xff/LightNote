@@ -3,25 +3,19 @@ import { htmlStyle } from "./constants";
 import type { HocuspocusProvider } from "@hocuspocus/provider";
 
 export function download(editor: Editor) {
-  const fileName = localStorage.getItem('edited') ?? `light_note_${Date.now()}.html`;
+  const fileName = localStorage.getItem('edited') ?? `light_note_${Date.now()}`;
   const download = window.prompt('Please insert file name', fileName);
   if (!download) {
     return;
   }
-  if ((!download.endsWith('.html') && !download.endsWith('.txt')) || download.slice(0, download.lastIndexOf('.')).trim().length === 0) {
-    window.alert('Invalid file name: e.g. (light_note.html, light_note.txt)');
+  if (download.trim().length === 0) {
+    window.alert(`Invalid file name. filename: ${download}`);
     return;
   }
 
   localStorage.setItem('edited', download);
-  let blob: Blob;
-  if (download.endsWith('.html')) {
-    const html = editor.getHTML();
-    blob = new Blob([htmlStyle, html], { type: 'text/html;charset=utf-8' });
-  } else {
-    const txt = editor.getText();
-    blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
-  }
+  const html = editor.getHTML();
+  const blob = new Blob([htmlStyle, html], { type: 'text/html;charset=utf-8' });
 
   const element = document.createElement('a');
   element.setAttribute('href', window.URL.createObjectURL(blob));
