@@ -38,15 +38,18 @@
 		addImage,
 		clearContent,
 		download,
-		endCollab,
+		endSharing,
 		setLink,
-		startCollab,
-		upload
+		upload,
+		startSharing
 	} from './editor';
 	import { getExtensions } from './extensions';
-	import { getExtsWithCollab } from './collab';
+	import { getExtensionsOnSharing } from './sharing';
 	import { defaultContent } from './constants';
 	import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
+	import * as Dialog from '@/lib/components/ui/dialog';
+	import { Label } from '@/lib/components/ui/label';
+	import { Input } from '@/lib/components/ui/input';
 
 	let element: Element;
 	let editor: Editor;
@@ -54,43 +57,48 @@
 	let files: FileList;
 	let content: string = '';
 	let provider: HocuspocusProvider;
+	let open: boolean = false;
+	let _endpoint: string = '';
+	let _workspace: string = '';
 
 	onMount(async () => {
-		const metadata = localStorage.getItem('collab');
+		const sharing = localStorage.getItem('sharing');
 		let extensions: Extensions;
 
-		if (metadata) {
+		if (sharing) {
 			try {
-				const { url, name } = JSON.parse(metadata);
-				if (!url) {
-					throw new Error('url does not exist on meatadata', { cause: 'InvalidMetadata' });
+				const { endpoint, workspace } = JSON.parse(sharing);
+				if (!endpoint) {
+					throw new Error('Invalid endpoint', { cause: 'InvalidMetadata' });
 				}
-				if (!name) {
-					throw new Error('name does not exist on meatadata', { cause: 'InvalidMetadata' });
+				if (!workspace) {
+					throw new Error('Invalid workspace', { cause: 'InvalidMetadata' });
 				}
+				_endpoint = endpoint;
+				_workspace = workspace;
 				const websocketProvider = new HocuspocusProviderWebsocket({
-					url,
+					url: endpoint,
 					maxAttempts: 2
 				});
 				provider = new HocuspocusProvider({
 					websocketProvider,
-					name,
+					name: workspace,
 					onConnect() {
-						window.alert(`Connected to ${url}/${name}`);
+						window.alert(`Connected to ${endpoint}/${workspace}`);
 					},
 					connect: false
 				});
 				await provider.connect();
-				extensions = getExtsWithCollab(provider, bubbleMenu);
+				extensions = getExtensionsOnSharing(provider, bubbleMenu);
 			} catch (e: any) {
 				if (e instanceof Error && e.cause === 'InvalidMetadata') {
-					window.alert(`Failed to start a collaboration with ${metadata}: ${e.toString()}`);
+					window.alert(`Failed to start sharing with ${sharing}: ${e.toString()}`);
 				} else {
-					window.alert(`Failed to start a collaboration with ${metadata}`);
+					window.alert(`Failed to start sharing with ${sharing}`);
 				}
 				console.error(e);
 
-				localStorage.removeItem('collab');
+				localStorage.removeItem('sharing');
 				location.reload();
 			}
 		} else {
@@ -287,10 +295,48 @@
 				on:click={() => document.getElementById('selectedFile')?.click()}
 				class="mx-0.5 h-8 px-2"><FileUp class="h-4 w-4" /></Button
 			>
-			<Button on:click={startCollab} class="mx-0.5 h-8 px-2">
-				<ScreenShare class="h-4 w-4" />
-			</Button>
-			<Button on:click={() => endCollab(provider)} disabled={!provider} class="mx-0.5 h-8 px-2"
+			<Dialog.Root {open}>
+				<Dialog.Trigger>
+					<Button class="mx-0.5 h-8 px-2">
+						<ScreenShare class="h-4 w-4" />
+					</Button>
+				</Dialog.Trigger>
+				<Dialog.Content class="sm:max-w-[425px]">
+					<Dialog.Header>
+						<Dialog.Title>Share</Dialog.Title>
+						<Dialog.Description
+							>Please input relay server endpoint and workspace name</Dialog.Description
+						>
+					</Dialog.Header>
+					<div class="grid gap-4 py-4">
+						<div class="grid grid-cols-4 items-center gap-4">
+							<Label for="endpoint" class="text-left">Endpoint</Label>
+							<Input
+								id="endpoint"
+								placeholder="ws://localhost:1234"
+								class="col-span-3"
+								bind:value={_endpoint}
+							/>
+						</div>
+						<div class="grid grid-cols-4 items-center gap-4">
+							<Label for="workspace" class="text-left">Workspace</Label>
+							<Input
+								id="workspace"
+								placeholder="workspace"
+								class="col-span-3"
+								bind:value={_workspace}
+							/>
+						</div>
+					</div>
+					<Dialog.Footer>
+						<Dialog.Close />
+						<Button variant="outline" on:click={() => startSharing(_endpoint, _workspace)}
+							>Connect</Button
+						>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
+			<Button on:click={() => endSharing(provider)} disabled={!provider} class="mx-0.5 h-8 px-2"
 				><ScreenShareOff class="h-4 w-4" /></Button
 			>
 			<Button on:click={toggleMode} class="ml-0.5 h-8 px-2"><SunMoon class="h-4 w-4" /></Button>

@@ -7,7 +7,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Image from '@tiptap/extension-image';
 
-export function getExtsWithCollab(provider: HocuspocusProvider, bubbleMenu: HTMLElement) {
+export function getExtensionsOnSharing(provider: HocuspocusProvider, bubbleMenu: HTMLElement) {
   return [
     StarterKit.configure({
       history: false
