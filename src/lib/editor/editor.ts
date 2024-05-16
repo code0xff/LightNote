@@ -57,38 +57,26 @@ export function addImage(editor: Editor) {
   editor.chain().focus().setImage({ src: url }).run();
 }
 
-export function startCollab() {
-  const metadata = window.prompt(
-    'Please insert metadata for collaboration',
-    localStorage.getItem('collabed') ?? '{"url":"ws://localhost:1234","name":"example-document"}'
-  );
-  if (!metadata) {
-    return;
-  }
+export function startSharing(endpoint: string, workspace: string) {
   try {
-    const { url, name } = JSON.parse(metadata);
-    if (!url) {
-      throw new Error('url does not exist on meatadata', { cause: 'InvalidMetadata' });
+    if (!endpoint) {
+      throw new Error('Invalid endpoint');
     }
-    if (!name) {
-      throw new Error('name does not exist on meatadata', { cause: 'InvalidMetadata' });
+    if (!workspace) {
+      throw new Error('Invalid workspace');
     }
-    localStorage.setItem('collab', metadata);
-    localStorage.setItem('collabed', metadata);
+    localStorage.setItem('sharing', JSON.stringify({ endpoint, workspace }));
+    localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
     location.reload();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (e: any) {
-    if (e instanceof Error && e.cause === 'InvalidMetadata') {
-      window.alert(`Invalid metadata format: ${e.toString()}`);
-    } else {
-      window.alert(`Invalid metadata format: ${metadata}`);
-    }
+    window.alert(e.toString());
     console.error(e);
   }
 }
 
-export function endCollab(provider: HocuspocusProvider) {
-  localStorage.removeItem('collab');
+export function endSharing(provider: HocuspocusProvider) {
+  localStorage.removeItem('sharing');
   if (provider) {
     window.alert('Disconnecting...');
     location.reload();
