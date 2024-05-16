@@ -57,9 +57,8 @@
 	let files: FileList;
 	let content: string = '';
 	let provider: HocuspocusProvider;
-	let open: boolean = false;
-	let _endpoint: string = '';
-	let _workspace: string = '';
+	let _endpoint: string;
+	let _workspace: string;
 
 	onMount(async () => {
 		const sharing = localStorage.getItem('sharing');
@@ -102,6 +101,22 @@
 				location.reload();
 			}
 		} else {
+			try {
+				const shared = localStorage.getItem('shared');
+				if (shared) {
+					const { endpoint, workspace } = JSON.parse(shared);
+					_endpoint = endpoint;
+					_workspace = workspace;
+				} else {
+					_endpoint = '';
+					_workspace = '';
+				}
+			} catch (e: any) {
+				_endpoint = '';
+				_workspace = '';
+				console.error(e);
+			}
+
 			extensions = getExtensions(bubbleMenu);
 			content = localStorage.getItem('auto-saved') ?? defaultContent;
 		}
@@ -295,7 +310,7 @@
 				on:click={() => document.getElementById('selectedFile')?.click()}
 				class="mx-0.5 h-8 px-2"><FileUp class="h-4 w-4" /></Button
 			>
-			<Dialog.Root {open}>
+			<Dialog.Root closeOnOutsideClick={false}>
 				<Dialog.Trigger>
 					<Button class="mx-0.5 h-8 px-2">
 						<ScreenShare class="h-4 w-4" />
@@ -329,9 +344,10 @@
 						</div>
 					</div>
 					<Dialog.Footer>
-						<Dialog.Close />
-						<Button variant="outline" on:click={() => startSharing(_endpoint, _workspace)}
-							>Connect</Button
+						<Button
+							class="w-full"
+							variant="outline"
+							on:click={() => startSharing(_endpoint, _workspace)}>Connect</Button
 						>
 					</Dialog.Footer>
 				</Dialog.Content>
