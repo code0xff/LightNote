@@ -59,8 +59,8 @@ export function addImage(editor: Editor) {
 
 export function startSharing(endpoint: string, workspace: string) {
   try {
-    if (!endpoint) {
-      throw new Error('Invalid endpoint');
+    if (!endpoint || !(endpoint.startsWith('ws://') || endpoint.startsWith('wss://'))) {
+      throw new Error('Invalid endpoint. endpoint should start with ws:// or wss://');
     }
     if (!workspace) {
       throw new Error('Invalid workspace');

@@ -77,13 +77,18 @@
 				_workspace = workspace;
 				const websocketProvider = new HocuspocusProviderWebsocket({
 					url: endpoint,
-					maxAttempts: 2
+					maxAttempts: 1
 				});
 				provider = new HocuspocusProvider({
 					websocketProvider,
 					name: workspace,
 					onConnect() {
 						window.alert(`Connected to ${endpoint}/${workspace}`);
+					},
+					onClose() {
+						window.alert(`Failed to connect with ${endpoint}/${workspace}`);
+						localStorage.removeItem('sharing');
+						location.reload();
 					},
 					connect: false
 				});
