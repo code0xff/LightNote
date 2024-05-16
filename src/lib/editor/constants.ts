@@ -61,9 +61,8 @@ export const defaultContent = `
   After signing up for ngrok and obtaining the token, use the command below to expose the previously launched server
   over HTTPS.</p>
 <pre><code>ngrok http http://localhost:1234</code></pre>
-<p style="text-align: start">Finally, connect to the collaboration server using the ngrok proxy address and the randomly
-  generated name.</p>
-<pre><code>{"url":"ws://localhost:1234","name":"random"}</code></pre>
+<p style="text-align: start">Finally, connect to relay server using the ngrok proxy address and workspace name.</p>
+<pre><code>{"endpoint":"ws://localhost:1234","workspace":"workspace"}</code></pre>
 <p style="text-align: start">Now, collaboration mode is active!</p>
 `;
 

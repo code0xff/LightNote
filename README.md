@@ -19,8 +19,8 @@ If it is not possible to provide the hosting endpoint over HTTPS, you can use th
 
     ngrok http http://localhost:1234
 
-Finally, connect to the collaboration server using the ngrok proxy address and the randomly generated name.
+Finally, connect to relay server using the ngrok proxy address and workspace name.
 
-    {"url":"ws://localhost:1234","name":"random"}
+    {"endpoint":"ws://localhost:1234","workspace":"workspace"}
 
 Now, collaboration mode is active!
