@@ -104,6 +104,9 @@ export const htmlStyle = `
       padding-left: 1rem;
       border-left: 2px solid #616161;
     }
+    img {
+      max-width: 708px;
+    }
   </style>
 </head>
 `;
