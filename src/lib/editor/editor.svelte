@@ -336,6 +336,12 @@
 								placeholder="ws://localhost:1234"
 								class="col-span-3"
 								bind:value={_endpoint}
+								on:keydown={(e) => {
+									if (e.code === 'Enter') {
+										e.preventDefault();
+										startSharing(_endpoint, _workspace);
+									}
+								}}
 							/>
 						</div>
 						<div class="grid grid-cols-4 items-center gap-4">
@@ -345,6 +351,12 @@
 								placeholder="workspace"
 								class="col-span-3"
 								bind:value={_workspace}
+								on:keydown={(e) => {
+									if (e.code === 'Enter') {
+										e.preventDefault();
+										startSharing(_endpoint, _workspace);
+									}
+								}}
 							/>
 						</div>
 					</div>
