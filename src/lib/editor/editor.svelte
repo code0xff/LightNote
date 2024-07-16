@@ -61,6 +61,16 @@
 	let _workspace: string;
 
 	onMount(async () => {
+		const searchParams = new URLSearchParams(window.location.search);
+
+		if (searchParams.has('endpoint') && searchParams.has('workspace')) {
+			const endpoint = searchParams.get('endpoint');
+			const workspace = searchParams.get('workspace');
+
+			localStorage.setItem('sharing', JSON.stringify({ endpoint, workspace }));
+			localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
+		}
+
 		const sharing = localStorage.getItem('sharing');
 		let extensions: Extensions;
 

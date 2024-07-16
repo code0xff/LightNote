@@ -65,9 +65,7 @@ export function startSharing(endpoint: string, workspace: string) {
     if (!workspace) {
       throw new Error('Invalid workspace');
     }
-    localStorage.setItem('sharing', JSON.stringify({ endpoint, workspace }));
-    localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
-    location.reload();
+    location.replace(`${location.protocol}//${location.host}${location.pathname}?endpoint=${endpoint}&workspace=${workspace}`);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (e: any) {
     window.alert(e.toString());
@@ -79,6 +77,6 @@ export function endSharing(provider: HocuspocusProvider) {
   localStorage.removeItem('sharing');
   if (provider) {
     window.alert('Disconnecting...');
-    location.reload();
+    location.replace(`${location.protocol}//${location.host}${location.pathname}`);
   }
 }
