@@ -61,22 +61,14 @@
 	let _workspace: string;
 
 	onMount(async () => {
-		const searchParams = new URLSearchParams(window.location.search);
-
-		if (searchParams.has('endpoint') && searchParams.has('workspace')) {
-			const endpoint = searchParams.get('endpoint');
-			const workspace = searchParams.get('workspace');
-
-			localStorage.setItem('sharing', JSON.stringify({ endpoint, workspace }));
-			localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
-		}
-
-		const sharing = localStorage.getItem('sharing');
+		const searchParams = new URLSearchParams(location.search);
 		let extensions: Extensions;
 
-		if (sharing) {
+		if (searchParams.has('endpoint') && searchParams.has('workspace')) {
 			try {
-				const { endpoint, workspace } = JSON.parse(sharing);
+				const endpoint = searchParams.get('endpoint');
+				const workspace = searchParams.get('workspace');
+
 				if (!endpoint) {
 					throw new Error('Invalid endpoint', { cause: 'InvalidMetadata' });
 				}
@@ -97,23 +89,24 @@
 					},
 					onClose() {
 						window.alert(`Failed to connect with ${endpoint}/${workspace}`);
-						localStorage.removeItem('sharing');
-						location.reload();
+						location.replace(`${location.protocol}//${location.host}${location.pathname}`);
 					},
 					connect: false
 				});
 				await provider.connect();
+
+				localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
+
 				extensions = getExtensionsOnSharing(provider, bubbleMenu);
 			} catch (e: any) {
 				if (e instanceof Error && e.cause === 'InvalidMetadata') {
-					window.alert(`Failed to start sharing with ${sharing}: ${e.toString()}`);
+					window.alert(`Failed to start sharing with ${location.search}: ${e.toString()}`);
 				} else {
-					window.alert(`Failed to start sharing with ${sharing}`);
+					window.alert(`Failed to start sharing with ${location.search}`);
 				}
 				console.error(e);
 
-				localStorage.removeItem('sharing');
-				location.reload();
+				location.replace(`${location.protocol}//${location.host}${location.pathname}`);
 			}
 		} else {
 			try {
