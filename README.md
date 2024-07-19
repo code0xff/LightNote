@@ -5,7 +5,16 @@ LightNote has been developed utilizing [SvelteKit](https://kit.svelte.dev), [Tip
 
 Documents are basically stored in **LocalStorage**, and if you wish to save them permanently, you should use the provided save function to store them as HTML files. Additionally, you can upload these files to continue editing.
 
-If you want more features, please visit the tiptap documentation and extend the functionality through extensions.
+If you want more features, please visit the Tiptap documentation and extend the functionality through extensions.
+
+* * *
+
+### Usage
+
+You can use LightNote via the following link:
+[https://code0xff.github.io/LightNote](https://code0xff.github.io/LightNote)
+
+This link will take you to the Github page where LightNote is deployed, allowing you to start using it immediately.
 
 * * *
 
@@ -19,8 +28,14 @@ If it is not possible to provide the hosting endpoint over HTTPS, you can use th
 
     ngrok http http://localhost:1234
 
-Finally, connect to relay server using the ngrok proxy address and workspace name.
+Finally, connect to the relay server using the ngrok proxy address and workspace name.
 
-    {"endpoint":"ws://localhost:1234","workspace":"workspace"}
+[https://code0xff.github.io/LightNote?endpoint={proxy_url}&workspace={workspace}](https://code0xff.github.io/LightNote?endpoint={proxy_url}&workspace={workspace})
 
 Now, collaboration mode is active!
+
+* * *
+
+### License
+
+LightNote is released under the MIT License. See LICENSE for details.

@@ -62,7 +62,9 @@ export const defaultContent = `
   over HTTPS.</p>
 <pre><code>ngrok http http://localhost:1234</code></pre>
 <p style="text-align: start">Finally, connect to relay server using the ngrok proxy address and workspace name.</p>
-<pre><code>{"endpoint":"ws://localhost:1234","workspace":"workspace"}</code></pre>
+<p style="text-align: start"><a target="_blank" rel="noopener noreferrer nofollow" 
+href="https://code0xff.github.io/LightNote?endpoint={porxy_url}&workspace={workspace}">
+https://code0xff.github.io/LightNote?endpoint={porxy_url}&workspace={workspace}</a></p>
 <p style="text-align: start">Now, collaboration mode is active!</p>
 `;
 
