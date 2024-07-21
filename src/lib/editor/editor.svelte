@@ -182,7 +182,7 @@
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleUnderline().run()}
-				disabled={!editor.chain().focus().toggleUnderline().run()}
+				disabled={!editor.can().chain().focus().toggleUnderline().run()}
 				variant={editor.isActive('underline') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
 			>
