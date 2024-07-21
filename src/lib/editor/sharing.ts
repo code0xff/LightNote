@@ -6,6 +6,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Image from '@tiptap/extension-image';
+import Youtube from "@tiptap/extension-youtube";
 
 export function getExtensionsOnSharing(provider: HocuspocusProvider, bubbleMenu: HTMLElement) {
   return [
@@ -28,6 +29,9 @@ export function getExtensionsOnSharing(provider: HocuspocusProvider, bubbleMenu:
     TextAlign.configure({
       types: ['heading', 'paragraph']
     }),
-    Placeholder
+    Placeholder,
+    Youtube.configure({
+      inline: true
+    })
   ]
 }

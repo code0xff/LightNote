@@ -79,3 +79,15 @@ export function endSharing(provider: HocuspocusProvider) {
     location.replace(`${location.protocol}//${location.host}${location.pathname}`);
   }
 }
+
+export function addYoutube(editor: Editor) {
+  const url = window.prompt('Please insert youtube url');
+  if (!url || url.trim().length === 0) {
+    return;
+  }
+  editor.commands.setYoutubeVideo({
+    src: url,
+    width: 640,
+    height: 480,
+  });
+}

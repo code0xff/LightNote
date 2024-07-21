@@ -32,7 +32,8 @@
 		TextQuote,
 		Undo,
 		ScreenShare,
-		ScreenShareOff
+		ScreenShareOff,
+		MonitorPlay
 	} from 'lucide-svelte';
 	import {
 		addImage,
@@ -41,7 +42,8 @@
 		endSharing,
 		setLink,
 		upload,
-		startSharing
+		startSharing,
+		addYoutube
 	} from './editor';
 	import { getExtensions } from './extensions';
 	import { getExtensionsOnSharing } from './sharing';
@@ -289,6 +291,9 @@
 			</Button>
 			<Button on:click={() => addImage(editor)} class="mx-0.5 h-8 px-2"
 				><ImagePlus class="h-4 w-4" /></Button
+			>
+			<Button on:click={() => addYoutube(editor)} class="mx-0.5 h-8 px-2"
+				><MonitorPlay class="h-4 w-4" /></Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().undo().run()}
