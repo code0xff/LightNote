@@ -7,6 +7,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
 import Image from '@tiptap/extension-image';
 import Youtube from "@tiptap/extension-youtube";
+import Underline from "@tiptap/extension-underline";
 
 export function getExtensionsOnSharing(provider: HocuspocusProvider, bubbleMenu: HTMLElement) {
   return [
@@ -32,6 +33,7 @@ export function getExtensionsOnSharing(provider: HocuspocusProvider, bubbleMenu:
     Placeholder,
     Youtube.configure({
       inline: true
-    })
+    }),
+    Underline
   ]
 }

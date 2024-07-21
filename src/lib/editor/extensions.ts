@@ -5,6 +5,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import StarterKit from "@tiptap/starter-kit";
 import Image from '@tiptap/extension-image';
 import Youtube from "@tiptap/extension-youtube";
+import Underline from "@tiptap/extension-underline";
 
 export function getExtensions(bubbleMenu: HTMLElement) {
   return [
@@ -25,6 +26,7 @@ export function getExtensions(bubbleMenu: HTMLElement) {
     Placeholder,
     Youtube.configure({
       inline: true
-    })
+    }),
+    Underline
   ];
 }
