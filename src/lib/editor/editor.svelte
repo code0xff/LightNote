@@ -33,7 +33,8 @@
 		Undo,
 		ScreenShare,
 		ScreenShareOff,
-		MonitorPlay
+		MonitorPlay,
+		Underline
 	} from 'lucide-svelte';
 	import {
 		addImage,
@@ -178,6 +179,14 @@
 				class="mx-0.5 h-8 px-2"
 			>
 				<Italic class="h-4 w-4" />
+			</Button>
+			<Button
+				on:click={() => editor.chain().focus().toggleUnderline().run()}
+				disabled={!editor.chain().focus().toggleUnderline().run()}
+				variant={editor.isActive('underline') ? 'default' : 'secondary'}
+				class="mx-0.5 h-8 px-2"
+			>
+				<Underline class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleStrike().run()}
@@ -407,6 +416,13 @@
 			class="h-8 px-2"
 		>
 			<Strikethrough class="h-4 w-4" />
+		</Button>
+		<Button
+			on:click={() => editor.chain().focus().toggleUnderline().run()}
+			variant={editor.isActive('underline') ? 'default' : 'secondary'}
+			class="h-8 px-2"
+		>
+			<Underline class="h-4 w-4" />
 		</Button>
 		<Button
 			on:click={() => editor.chain().focus().toggleCode().run()}
