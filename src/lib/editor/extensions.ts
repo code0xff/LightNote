@@ -4,6 +4,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import StarterKit from "@tiptap/starter-kit";
 import Image from '@tiptap/extension-image';
+import Youtube from "@tiptap/extension-youtube";
 
 export function getExtensions(bubbleMenu: HTMLElement) {
   return [
@@ -21,6 +22,9 @@ export function getExtensions(bubbleMenu: HTMLElement) {
     TextAlign.configure({
       types: ['heading', 'paragraph']
     }),
-    Placeholder
+    Placeholder,
+    Youtube.configure({
+      inline: true
+    })
   ];
 }
