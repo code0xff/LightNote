@@ -206,11 +206,11 @@ https://code0xff.github.io/LightNote?endpoint={porxy_url}&workspace={workspace}<
     img {
       max-width: 708px;
     }
-    a:link {
+    a {
       text-decoration: none;
-      color: 	#1e90ff;
+      color: #1e90ff;
     }
-    a:link:hover {
+    a:hover {
       text-decoration: underline;
       cursor: pointer;
     }
