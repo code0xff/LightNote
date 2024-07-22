@@ -109,6 +109,14 @@ export const htmlStyle = `
     img {
       max-width: 708px;
     }
+    a:link {
+      text-decoration: none;
+      color: 	#1e90ff;
+    }
+    a:link:hover {
+      text-decoration: underline;
+      cursor: pointer;
+    }
   </style>
 </head>
 `;

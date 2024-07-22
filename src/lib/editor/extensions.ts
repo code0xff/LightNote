@@ -13,10 +13,7 @@ export function getExtensions(bubbleMenu: HTMLElement) {
     BubbleMenu.configure({
       element: bubbleMenu
     }),
-    Link.configure({
-      openOnClick: false,
-      autolink: true
-    }),
+    Link,
     Image.configure({
       inline: true
     }),
