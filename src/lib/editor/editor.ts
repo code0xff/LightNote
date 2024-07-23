@@ -76,6 +76,7 @@ export function startSharing(endpoint: string, workspace: string) {
 export function endSharing(provider: HocuspocusProvider) {
   if (provider) {
     window.alert('Disconnecting...');
+    localStorage.removeItem('connected');
     location.replace(`${location.protocol}//${location.host}${location.pathname}`);
   }
 }
