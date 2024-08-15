@@ -79,9 +79,19 @@ export const htmlStyle = `
     }
     body {
       font-family: ui-sans-serif, system-ui, sans-serif;
-      margin: 0 auto;
-      padding: 4rem 0;
-      width: 708px;
+    }
+    @media only screen and (min-width: 768px) {
+      body {
+        margin: 0 auto;
+        padding: 4rem 0;
+        width: 708px;
+      }
+    }
+    @media only screen and (max-width: 768px) {
+      body {
+        margin: 0;
+        padding: 1rem;
+      }
     }
     code {
       font-family: monospace;
