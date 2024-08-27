@@ -63,6 +63,8 @@
 	let _endpoint: string;
 	let _workspace: string;
 
+	let title: string = '🔴 LightNote';
+
 	onMount(async () => {
 		const searchParams = new URLSearchParams(location.search);
 		let extensions: Extensions;
@@ -89,8 +91,10 @@
 					name: workspace,
 					onConnect() {
 						localStorage.setItem('connected', JSON.stringify({ endpoint, workspace }));
+						title = '🟢 LightNote';
 					},
 					onClose() {
+						title = '🔴 LightNote';
 						if (localStorage.getItem('connected')) {
 							if (window.confirm(`Connection closed. Reconnect to ${endpoint}/${workspace}?`)) {
 								location.replace(
@@ -166,6 +170,10 @@
 		editor.commands.focus();
 	});
 </script>
+
+<svelte:head>
+	<title>{title}</title>
+</svelte:head>
 
 {#if editor}
 	<div>
