@@ -144,7 +144,7 @@
 			}
 
 			extensions = getExtensions(bubbleMenu);
-			content = localStorage.getItem('auto-saved') ?? defaultContent;
+			content = localStorage.getItem('auto_saved') ?? defaultContent;
 		}
 		editor = new Editor({
 			element: element,
@@ -156,7 +156,7 @@
 			extensions: extensions!,
 			onUpdate({ editor }) {
 				try {
-					localStorage.setItem('auto-saved', editor.getHTML());
+					localStorage.setItem('auto_saved', editor.getHTML());
 				} catch (e: any) {
 					console.error(e);
 				}
