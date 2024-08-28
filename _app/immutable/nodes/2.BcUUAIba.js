@@ -190,39 +190,125 @@ https://code0xff.github.io/LightNote?endpoint={porxy_url}&workspace={workspace}<
         padding: 1rem;
       }
     }
+
+    h1 {
+      display: block;
+      font-size: 2em;
+      margin-top: 0.67em;
+      margin-bottom: 0.67em;
+      margin-left: 0;
+      margin-right: 0;
+      font-weight: bold;
+    }
+
+    h2 {
+      display: block;
+      font-size: 1.5em;
+      margin-top: 0.83em;
+      margin-bottom: 0.83em;
+      margin-left: 0;
+      margin-right: 0;
+      font-weight: bold;
+    }
+
+    h3 {
+      display: block;
+      font-size: 1.17em;
+      margin-top: 1em;
+      margin-bottom: 1em;
+      margin-left: 0;
+      margin-right: 0;
+      font-weight: bold;
+    }
+
+    p {
+      display: block;
+      margin-top: 1em;
+      margin-bottom: 1em;
+      margin-left: 0;
+      margin-right: 0;
+    }
+
+    ul {
+      display: block;
+      list-style-type: disc;
+      margin-top: 1em;
+      margin-bottom: 1em;
+      margin-left: 0;
+      margin-right: 0;
+      padding-left: 1.3em;
+    }
+
+    ol {
+      display: block;
+      list-style-type: decimal;
+      margin-top: 1em;
+      margin-bottom: 1em;
+      margin-left: 0;
+      margin-right: 0;
+      padding-left: 1.3em;
+    }
+
     code {
       font-family: monospace;
-      background-color: rgb(97, 97, 97, 0.1);
+      background-color: rgba(#616161, 0.1);
       color: crimson;
     }
+
     pre {
       display: block;
       font-family: monospace;
       white-space: pre-wrap;
-      background: rgb(97, 97, 97, 0.1);
+      background: rgba(#616161, 0.1);
       color: #616161;
       margin: 1em 0;
       padding: 1rem;
+
+      code {
+        color: inherit;
+        padding: 0;
+        background: none;
+      }
     }
-    pre > code {
-      color: inherit;
-      padding: 0;
-      background: none;
+
+    img {
+      display: inline-block;
+      height: auto;
+      max-width: 100%;
     }
+
     blockquote {
       padding-left: 1rem;
       border-left: 2px solid #616161;
     }
-    img {
-      max-width: 708px;
+
+    hr {
+      display: block;
+      margin-top: 0.5em;
+      margin-bottom: 0.5em;
+      margin-left: auto;
+      margin-right: auto;
+      border-style: inset;
+      border-width: 1px;
+      border-color: #616161;
     }
+
     a {
       text-decoration: none;
       color: #1e90ff;
     }
+
     a:hover {
       text-decoration: underline;
       cursor: pointer;
+    }
+
+    p.is-editor-empty:first-child::before {
+      color: #adb5bd;
+      content: attr(data-placeholder);
+      float: left;
+      height: 0;
+      pointer-events: none;
     }
   </style>
 </head>
