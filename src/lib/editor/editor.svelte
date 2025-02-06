@@ -91,10 +91,10 @@
 					name: workspace,
 					onConnect() {
 						localStorage.setItem('connected', JSON.stringify({ endpoint, workspace }));
-						title = '🟢 LightNote';
+						title = `LightNote [${workspace}]`;
 					},
 					onClose() {
-						title = '🔴 LightNote';
+						title = 'LightNote';
 						if (localStorage.getItem('connected')) {
 							if (window.confirm(`Connection closed. Reconnect to ${endpoint}/${workspace}?`)) {
 								location.replace(
