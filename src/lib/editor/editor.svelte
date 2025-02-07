@@ -63,7 +63,7 @@
 	let _endpoint: string;
 	let _workspace: string;
 
-	let title: string = '🔴 LightNote';
+	let title: string = 'LightNote';
 
 	onMount(async () => {
 		const searchParams = new URLSearchParams(location.search);
