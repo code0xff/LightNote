@@ -55,7 +55,7 @@ export const defaultContent = `
     href="https://tiptap.dev/docs/hocuspocus/introduction">Hocuspocus</a> server for relay. The Hocuspocus server can
   either be hosted directly or leverage a third-party service that provides the necessary functionality. If Node.js is
   installed on the device, enter the following command to start the Hocuspocus server.</p>
-<pre><code>npx @hocuspocus/cli --port 1234 --sqlite</code></pre>
+<pre><code>npx @hocuspocus/cli@v2.15.2 --port 1234 --sqlite</code></pre>
 <p style="text-align: start">If it is not possible to provide the hosting endpoint over HTTPS, you can use the <a
     target="_blank" rel="noopener noreferrer nofollow" href="https://ngrok.com">ngrok</a> proxy to expose it via HTTPS.
   After signing up for ngrok and obtaining the token, use the command below to expose the previously launched server

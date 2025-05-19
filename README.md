@@ -22,7 +22,7 @@ This link will take you to the Github page where LightNote is deployed, allowing
 
 LightNote supports collaboration features. LightNote utilizes Tiptap's Collaboration extension and supports cross-device connections through WebSocket, requiring a [Hocuspocus](https://tiptap.dev/docs/hocuspocus/introduction) server for relay. The Hocuspocus server can either be hosted directly or leverage a third-party service that provides the necessary functionality. If Node.js is installed on the device, enter the following command to start the Hocuspocus server.
 
-    npx @hocuspocus/cli --port 1234 --sqlite
+    npx @hocuspocus/cli@v2.15.2 --port 1234 --sqlite
 
 If it is not possible to provide the hosting endpoint over HTTPS, you can use the [ngrok](https://ngrok.com) proxy to expose it via HTTPS. After signing up for ngrok and obtaining the token, use the command below to expose the previously launched server over HTTPS.
 
