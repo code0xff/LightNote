@@ -20,7 +20,11 @@ export function getExtensionsOnSharing(provider: HocuspocusProvider, bubbleMenu:
     BubbleMenu.configure({
       element: bubbleMenu
     }),
-    Link,
+    Link.configure({
+      HTMLAttributes: {
+        target: '_self'
+      }
+    }),
     Image.configure({
       inline: true
     }),

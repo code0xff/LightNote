@@ -15,8 +15,8 @@ export function getExtensions(bubbleMenu: HTMLElement) {
     }),
     Link.configure({
       HTMLAttributes: {
-        target: '_self',
-      },
+        target: '_self'
+      }
     }),
     Image.configure({
       inline: true
