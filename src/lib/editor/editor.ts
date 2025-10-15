@@ -3,7 +3,13 @@ import { htmlStyle } from "./constants";
 import type { HocuspocusProvider } from "@hocuspocus/provider";
 
 export function download(editor: Editor) {
-  const fileName = localStorage.getItem('edited') ?? `light_note_${Date.now()}`;
+	const searchParams = new URLSearchParams(location.search);
+  let fileName = searchParams.get('workspace');
+
+  if (!fileName) {
+    fileName = localStorage.getItem('edited') ?? `light_note_${Date.now()}`;
+  }
+  
   const download = window.prompt('Please insert file name', fileName);
   if (!download) {
     return;
