@@ -96,14 +96,14 @@
 					onClose() {
 						title = 'LightNote';
 						if (localStorage.getItem('connected')) {
-							if (window.confirm(`Connection closed. Reconnect to ${endpoint}/${workspace}?`)) {
-								location.replace(
-									`${location.protocol}//${location.host}${location.pathname}?endpoint=${endpoint}&workspace=${workspace}`
-								);
-							} else {
-								localStorage.removeItem('connected');
-								location.replace(`${location.protocol}//${location.host}${location.pathname}`);
-							}
+							// if (window.confirm(`Connection closed. Reconnect to ${endpoint}/${workspace}?`)) {
+							location.replace(
+								`${location.protocol}//${location.host}${location.pathname}?endpoint=${endpoint}&workspace=${workspace}`
+							);
+							// } else {
+							// 	localStorage.removeItem('connected');
+							// 	location.replace(`${location.protocol}//${location.host}${location.pathname}`);
+							// }
 						} else {
 							window.alert(`Failed to connect to ${endpoint}/${workspace}`);
 							location.replace(`${location.protocol}//${location.host}${location.pathname}`);
