@@ -694,7 +694,7 @@
 								on:blur={() => void finishTitleEditing()}
 								on:keydown={handleTitleKeydown}
 							/>
-							<span class="mt-1.5 block text-xs text-muted-foreground"
+							<span class="mt-1 block text-xs text-muted-foreground"
 								>{formatUpdatedAt(document.updatedAt)}</span
 							>
 						</div>
