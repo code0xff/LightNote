@@ -1,21 +1,21 @@
 {
-  "name": "LightNote",
-  "short_name": "LightNote",
-  "start_url": "/LightNote/",
-  "display": "standalone",
-  "theme_color": "hsl(240 10% 3.9%)",
-  "background_color": "hsl(240 10% 3.9%)",
-  "icons": [
-    {
-      "sizes": "192x192",
-      "src": "android-chrome-192x192.png",
-      "type": "image/png"
-    },
-    {
-      "sizes": "512x512",
-      "src": "android-chrome-512x512.png",
-      "type": "image/png"
-    }
-  ],
-  "description": "Light Note"
+	"name": "LightNote",
+	"short_name": "LightNote",
+	"start_url": "/LightNote/",
+	"display": "standalone",
+	"theme_color": "hsl(240 10% 3.9%)",
+	"background_color": "hsl(240 10% 3.9%)",
+	"icons": [
+		{
+			"sizes": "192x192",
+			"src": "android-chrome-192x192.png",
+			"type": "image/png"
+		},
+		{
+			"sizes": "512x512",
+			"src": "android-chrome-512x512.png",
+			"type": "image/png"
+		}
+	],
+	"description": "Light Note"
 }

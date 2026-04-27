@@ -1,13 +1,12 @@
- LightNote
-=========
+# LightNote
 
 LightNote has been developed utilizing [SvelteKit](https://kit.svelte.dev), [Tiptap](https://tiptap.dev), and [shadcn/ui](https://ui.shadcn.com/) to ensure accessibility even in offline environments.
 
-Documents are basically stored in **LocalStorage**, and if you wish to save them permanently, you should use the provided save function to store them as HTML files. Additionally, you can upload these files to continue editing.
+Documents are stored locally in **IndexedDB**. LightNote keeps multiple documents on the device, restores the last opened document, and automatically saves edits. You can export the active document as an HTML file, and imported HTML files are added as new documents.
 
 If you want more features, please visit the Tiptap documentation and extend the functionality through extensions.
 
-* * *
+---
 
 ### Usage
 
@@ -16,7 +15,23 @@ You can use LightNote via the following link:
 
 This link will take you to the Github page where LightNote is deployed, allowing you to start using it immediately.
 
-* * *
+---
+
+### Development
+
+Install dependencies and run the local development server.
+
+    npm ci
+    npm run dev
+
+Before publishing changes, run the project checks.
+
+    npm run check
+    npm run lint
+    npm test -- --run
+    npm run build
+
+---
 
 ### Collaboration
 
@@ -34,7 +49,7 @@ Finally, connect to the relay server using the ngrok proxy address and workspace
 
 Now, collaboration mode is active!
 
-* * *
+---
 
 ### License
 

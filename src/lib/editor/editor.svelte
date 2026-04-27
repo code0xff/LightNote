@@ -1,8 +1,8 @@
 <script lang="ts">
 	import './styles.scss';
 
-	import { Editor, type Extensions } from '@tiptap/core';
-	import { onMount } from 'svelte';
+	import { Editor, type Extensions, type JSONContent } from '@tiptap/core';
+	import { onMount, tick } from 'svelte';
 	import { Button } from '@/lib/components/ui/button';
 	import { toggleMode } from 'mode-watcher';
 	import {
@@ -23,9 +23,11 @@
 		Link2Off,
 		List,
 		ListOrdered,
+		Pencil,
 		Pilcrow,
 		Redo,
 		FileDown,
+		Trash2,
 		SeparatorHorizontal,
 		Strikethrough,
 		SunMoon,
@@ -38,17 +40,28 @@
 	} from 'lucide-svelte';
 	import {
 		addImage,
-		clearContent,
+		addYoutube,
+		buildShareUrl,
 		download,
 		endSharing,
+		readUploadedDocument,
+		readSharedMetadata,
 		setLink,
-		upload,
 		startSharing,
-		addYoutube
+		validateShareMetadata
 	} from './editor';
+	import {
+		createDocument,
+		deleteDocument,
+		ensureInitialDocument,
+		getDocument,
+		listDocuments,
+		setStoredCurrentDocumentId,
+		updateDocument,
+		type LightNoteDocument
+	} from '$lib/documents/store';
 	import { getExtensions } from './extensions';
 	import { getExtensionsOnSharing } from './sharing';
-	import { defaultContent } from './constants';
 	import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
 	import * as Dialog from '@/lib/components/ui/dialog';
 	import { Label } from '@/lib/components/ui/label';
@@ -57,117 +70,341 @@
 	let element: Element;
 	let editor: Editor;
 	let bubbleMenu: HTMLElement;
-	let files: FileList;
-	let content: string = '';
-	let provider: HocuspocusProvider;
-	let _endpoint: string;
-	let _workspace: string;
+	let files: FileList | undefined;
+	let content: string | JSONContent = '';
+	let documents: LightNoteDocument[] = [];
+	let currentDocument: LightNoteDocument | null = null;
+	let documentTitle = 'Untitled';
+	let provider: HocuspocusProvider | undefined;
+	let _endpoint = '';
+	let _workspace = '';
+	let isSharingMode = false;
+	let saveTimer: ReturnType<typeof setTimeout> | undefined;
+	let saveQueue: Promise<void> = Promise.resolve();
+	let editingTitleDocumentId: string | null = null;
 
 	let title: string = 'LightNote';
 
-	onMount(async () => {
-		const searchParams = new URLSearchParams(location.search);
-		let extensions: Extensions;
+	function formatUpdatedAt(value: number) {
+		return new Intl.DateTimeFormat(undefined, {
+			month: 'short',
+			day: 'numeric',
+			hour: '2-digit',
+			minute: '2-digit'
+		}).format(value);
+	}
 
-		if (searchParams.has('endpoint') && searchParams.has('workspace')) {
-			try {
-				const endpoint = searchParams.get('endpoint');
-				const workspace = searchParams.get('workspace');
-
-				if (!endpoint) {
-					throw new Error('Invalid endpoint', { cause: 'InvalidMetadata' });
-				}
-				if (!workspace) {
-					throw new Error('Invalid workspace', { cause: 'InvalidMetadata' });
-				}
-				_endpoint = endpoint;
-				_workspace = workspace;
-				const websocketProvider = new HocuspocusProviderWebsocket({
-					url: endpoint,
-					maxAttempts: 1
-				});
-				provider = new HocuspocusProvider({
-					websocketProvider,
-					name: workspace,
-					onConnect() {
-						localStorage.setItem('connected', JSON.stringify({ endpoint, workspace }));
-						title = `LightNote [${workspace}]`;
-					},
-					onClose() {
-						title = 'LightNote';
-						if (localStorage.getItem('connected')) {
-							// if (window.confirm(`Connection closed. Reconnect to ${endpoint}/${workspace}?`)) {
-							location.replace(
-								`${location.protocol}//${location.host}${location.pathname}?endpoint=${endpoint}&workspace=${workspace}`
-							);
-							// } else {
-							// 	localStorage.removeItem('connected');
-							// 	location.replace(`${location.protocol}//${location.host}${location.pathname}`);
-							// }
-						} else {
-							window.alert(`Failed to connect to ${endpoint}/${workspace}`);
-							location.replace(`${location.protocol}//${location.host}${location.pathname}`);
-						}
-					},
-					connect: false
-				});
-				await provider.connect();
-
-				localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
-
-				extensions = getExtensionsOnSharing(provider, bubbleMenu);
-			} catch (e: any) {
-				if (e instanceof Error && e.cause === 'InvalidMetadata') {
-					window.alert(`Failed to start sharing with ${location.search}: ${e.toString()}`);
-				} else {
-					window.alert(`Failed to start sharing with ${location.search}`);
-				}
-				console.error(e);
-
-				location.replace(`${location.protocol}//${location.host}${location.pathname}`);
-			}
-		} else {
-			try {
-				const shared = localStorage.getItem('shared');
-				if (shared) {
-					const { endpoint, workspace } = JSON.parse(shared);
-					_endpoint = endpoint;
-					_workspace = workspace;
-				} else {
-					_endpoint = '';
-					_workspace = '';
-				}
-			} catch (e: any) {
-				_endpoint = '';
-				_workspace = '';
-				console.error(e);
-			}
-
-			extensions = getExtensions(bubbleMenu);
-			content = localStorage.getItem('auto_saved') ?? defaultContent;
+	function handleTitleKeydown(event: KeyboardEvent) {
+		if (event.key === 'Enter') {
+			(event.currentTarget as HTMLInputElement | null)?.blur();
 		}
-		editor = new Editor({
-			element: element,
-			editorProps: {
-				attributes: {
-					class: 'mt-16 md:w-[708px] md:py-8 md:px-0 md:mx-auto p-4 outline-none'
+	}
+
+	async function startTitleEditing(documentToEdit: LightNoteDocument) {
+		if (documentToEdit.id !== currentDocument?.id) {
+			return;
+		}
+
+		editingTitleDocumentId = documentToEdit.id;
+		await tick();
+
+		const input = window.document.getElementById(
+			`document-title-${documentToEdit.id}`
+		) as HTMLInputElement | null;
+
+		input?.focus();
+		input?.select();
+	}
+
+	async function finishTitleEditing() {
+		if (!editingTitleDocumentId) {
+			return;
+		}
+
+		editingTitleDocumentId = null;
+		await flushCurrentDocument();
+	}
+
+	function scheduleCurrentDocumentSave(saveTitle = false) {
+		if (isSharingMode || !currentDocument || !editor) {
+			return;
+		}
+
+		if (saveTimer) {
+			clearTimeout(saveTimer);
+		}
+
+		const documentId = currentDocument.id;
+		const content = editor.getJSON();
+		const nextTitle = saveTitle ? documentTitle : undefined;
+
+		saveTimer = setTimeout(() => {
+			void queueDocumentSave(documentId, content, nextTitle);
+		}, 500);
+	}
+
+	function queueDocumentSave(
+		documentId: string,
+		content: LightNoteDocument['content'],
+		nextTitle?: string
+	) {
+		saveQueue = saveQueue.then(async () => {
+			try {
+				const updated = await updateDocument(documentId, {
+					content,
+					contentFormat: 'tiptap-json',
+					...(nextTitle === undefined ? {} : { title: nextTitle })
+				});
+
+				if (currentDocument?.id === documentId) {
+					currentDocument = {
+						...updated,
+						title: documentTitle
+					};
+					title = `LightNote - ${documentTitle}`;
 				}
-			},
-			extensions: extensions!,
-			onUpdate({ editor }) {
-				try {
-					localStorage.setItem('auto_saved', editor.getHTML());
-				} catch (e: any) {
-					console.error(e);
-				}
-			},
-			content,
-			onTransaction: () => {
-				// force re-render so `editor.isActive` works as expected
-				editor = editor;
+
+				const nextDocuments = await listDocuments();
+				documents = nextDocuments.map((document) =>
+					document.id === currentDocument?.id ? { ...document, title: documentTitle } : document
+				);
+			} catch (error) {
+				console.error(error);
 			}
 		});
-		editor.commands.focus();
+
+		return saveQueue;
+	}
+
+	async function flushCurrentDocument() {
+		if (saveTimer) {
+			clearTimeout(saveTimer);
+			saveTimer = undefined;
+		}
+
+		if (!isSharingMode && currentDocument && editor) {
+			await queueDocumentSave(currentDocument.id, editor.getJSON(), documentTitle);
+		}
+	}
+
+	function setActiveDocument(document: LightNoteDocument) {
+		currentDocument = document;
+		documentTitle = document.title;
+		title = `LightNote - ${document.title}`;
+		setStoredCurrentDocumentId(document.id);
+
+		if (editor) {
+			editor.commands.setContent(document.content, false);
+			editor.commands.focus();
+		}
+	}
+
+	async function refreshDocuments() {
+		documents = await listDocuments();
+	}
+
+	async function createNewDocument() {
+		try {
+			await flushCurrentDocument();
+			const document = await createDocument({
+				title: 'Untitled',
+				content: { type: 'doc', content: [{ type: 'paragraph' }] },
+				contentFormat: 'tiptap-json'
+			});
+
+			await refreshDocuments();
+			setActiveDocument(document);
+		} catch (error) {
+			window.alert('Failed to create document');
+			console.error(error);
+		}
+	}
+
+	async function switchDocument(documentId: string) {
+		if (documentId === currentDocument?.id) {
+			return;
+		}
+
+		try {
+			await flushCurrentDocument();
+			const document = await getDocument(documentId);
+
+			if (document) {
+				setActiveDocument(document);
+			}
+		} catch (error) {
+			window.alert('Failed to open document');
+			console.error(error);
+		}
+	}
+
+	async function deleteDocumentById(documentToDelete: LightNoteDocument) {
+		if (!window.confirm(`Delete "${documentToDelete.title || 'Untitled'}"?`)) {
+			return;
+		}
+
+		try {
+			const deletingCurrentDocument = currentDocument?.id === documentToDelete.id;
+
+			await deleteDocument(documentToDelete.id);
+
+			let remainingDocuments = await listDocuments();
+			if (remainingDocuments.length === 0) {
+				const document = await createDocument({
+					title: 'Untitled',
+					content: { type: 'doc', content: [{ type: 'paragraph' }] },
+					contentFormat: 'tiptap-json'
+				});
+				remainingDocuments = [document];
+			}
+
+			documents = remainingDocuments;
+			if (deletingCurrentDocument) {
+				setActiveDocument(remainingDocuments[0]);
+			}
+		} catch (error) {
+			window.alert('Failed to delete document');
+			console.error(error);
+		}
+	}
+
+	async function importDocument() {
+		try {
+			const uploadedDocument = await readUploadedDocument(files);
+
+			await flushCurrentDocument();
+
+			const document = await createDocument(uploadedDocument);
+
+			files = undefined;
+			await refreshDocuments();
+			setActiveDocument(document);
+		} catch (error) {
+			window.alert(error instanceof Error ? error.message : 'Failed to upload file');
+			console.error(error);
+		}
+	}
+
+	onMount(() => {
+		let disposed = false;
+
+		async function initializeEditor() {
+			const searchParams = new URLSearchParams(location.search);
+			let extensions: Extensions | undefined;
+
+			if (searchParams.has('endpoint') || searchParams.has('workspace')) {
+				isSharingMode = true;
+				try {
+					const { endpoint, workspace } = validateShareMetadata(
+						searchParams.get('endpoint') ?? '',
+						searchParams.get('workspace') ?? ''
+					);
+
+					_endpoint = endpoint;
+					_workspace = workspace;
+
+					const websocketProvider = new HocuspocusProviderWebsocket({
+						url: endpoint,
+						maxAttempts: 1
+					});
+					const reconnectKey = `reconnect:${endpoint}:${workspace}`;
+
+					provider = new HocuspocusProvider({
+						websocketProvider,
+						name: workspace,
+						onConnect() {
+							sessionStorage.removeItem(reconnectKey);
+							localStorage.setItem('connected', JSON.stringify({ endpoint, workspace }));
+							title = `LightNote [${workspace}]`;
+						},
+						onClose() {
+							title = 'LightNote';
+							if (!sessionStorage.getItem(reconnectKey) && localStorage.getItem('connected')) {
+								sessionStorage.setItem(reconnectKey, 'true');
+								location.replace(
+									buildShareUrl(location.origin, location.pathname, { endpoint, workspace })
+								);
+								return;
+							}
+
+							localStorage.removeItem('connected');
+							sessionStorage.removeItem(reconnectKey);
+							window.alert(`Failed to connect to ${endpoint}/${workspace}`);
+							location.replace(`${location.origin}${location.pathname}`);
+						},
+						connect: false
+					});
+					await provider.connect();
+
+					localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
+
+					extensions = getExtensionsOnSharing(provider, bubbleMenu);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : 'Unknown error';
+
+					window.alert(`Failed to start sharing with ${location.search}: ${message}`);
+					console.error(error);
+
+					localStorage.removeItem('connected');
+					location.replace(`${location.origin}${location.pathname}`);
+					return;
+				}
+			} else {
+				try {
+					const shared = readSharedMetadata(localStorage);
+
+					_endpoint = shared?.endpoint ?? '';
+					_workspace = shared?.workspace ?? '';
+
+					extensions = getExtensions(bubbleMenu);
+					currentDocument = await ensureInitialDocument();
+					documentTitle = currentDocument.title;
+					content = currentDocument.content;
+					title = `LightNote - ${currentDocument.title}`;
+					documents = await listDocuments();
+				} catch (error) {
+					window.alert(error instanceof Error ? error.message : 'Failed to load documents');
+					console.error(error);
+					return;
+				}
+			}
+
+			if (disposed || !extensions) {
+				return;
+			}
+
+			editor = new Editor({
+				element: element,
+				editorProps: {
+					attributes: {
+						class: isSharingMode
+							? 'mt-16 md:w-[708px] md:py-8 md:px-0 md:mx-auto p-4 outline-none'
+							: 'mt-40 p-4 outline-none md:w-[708px] md:py-8 md:px-0 md:mx-auto lg:ml-[calc(18rem+(100vw-18rem-708px)/2)] lg:mt-16'
+					}
+				},
+				extensions,
+				onUpdate() {
+					scheduleCurrentDocumentSave();
+				},
+				content,
+				onTransaction: () => {
+					// force re-render so `editor.isActive` works as expected
+					editor = editor;
+				}
+			});
+			editor.commands.focus();
+		}
+
+		void initializeEditor();
+
+		return () => {
+			disposed = true;
+			if (saveTimer) {
+				clearTimeout(saveTimer);
+			}
+			editor?.destroy();
+			(provider as (HocuspocusProvider & { destroy?: () => void }) | undefined)?.destroy?.();
+		};
 	});
 </script>
 
@@ -178,11 +415,13 @@
 {#if editor}
 	<div>
 		<nav
-			class="fixed left-0 top-0 z-10 flex w-full flex-row justify-start overflow-x-auto bg-white p-4 dark:bg-[color:hsl(240,10%,3.9%)] lg:justify-center"
+			class={isSharingMode
+				? 'fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center justify-start overflow-x-auto border-b border-border bg-background px-3 py-3 lg:justify-center'
+				: 'fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center justify-start overflow-x-auto border-b border-border bg-background px-3 py-3 lg:left-72 lg:w-[calc(100%-18rem)] lg:px-4'}
 		>
-			<Button on:click={() => clearContent(editor)} class="mr-0.5 h-8 px-2"
-				><BookPlus class="h-4 w-4" /></Button
-			>
+			<Button on:click={createNewDocument} disabled={isSharingMode} class="mr-0.5 h-8 px-2">
+				<BookPlus class="h-4 w-4" />
+			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleBold().run()}
 				disabled={!editor.can().chain().focus().toggleBold().run()}
@@ -337,18 +576,20 @@
 			>
 				<Redo class="h-4 w-4" />
 			</Button>
-			<Button on:click={() => download(editor)} class="mx-0.5 h-8 px-2"
+			<Button on:click={() => download(editor, currentDocument?.title)} class="mx-0.5 h-8 px-2"
 				><FileDown class="h-4 w-4" /></Button
 			>
 			<input
 				type="file"
 				id="selectedFile"
+				accept=".html,.htm,text/html"
 				style="display: none;"
 				bind:files
-				on:change={() => upload(editor, files)}
+				on:change={importDocument}
 			/>
 			<Button
 				on:click={() => document.getElementById('selectedFile')?.click()}
+				disabled={isSharingMode}
 				class="mx-0.5 h-8 px-2"><FileUp class="h-4 w-4" /></Button
 			>
 			<Dialog.Root closeOnOutsideClick={false}>
@@ -411,6 +652,84 @@
 			<Button on:click={toggleMode} class="ml-0.5 h-8 px-2"><SunMoon class="h-4 w-4" /></Button>
 		</nav>
 	</div>
+{/if}
+
+{#if editor && !isSharingMode}
+	<aside
+		class="fixed left-0 top-16 z-10 flex h-24 w-full flex-col border-b border-border bg-background lg:bottom-0 lg:top-0 lg:z-30 lg:h-auto lg:w-72 lg:border-b-0 lg:border-r"
+	>
+		<div class="hidden h-16 items-center justify-between border-b border-border px-4 lg:flex">
+			<div class="min-w-0">
+				<div class="truncate text-sm font-semibold">LightNote</div>
+				<div class="text-xs text-muted-foreground">{documents.length} documents</div>
+			</div>
+		</div>
+		<div
+			class="flex flex-1 items-start gap-2 overflow-x-auto p-3 lg:flex-col lg:items-stretch lg:overflow-y-auto"
+		>
+			{#each documents as document (document.id)}
+				<div
+					class="group grid min-h-16 w-48 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors lg:w-full lg:min-w-0 {document.id ===
+					currentDocument?.id
+						? 'border-primary bg-secondary'
+						: 'border-transparent hover:border-border hover:bg-secondary'}"
+				>
+					{#if document.id === currentDocument?.id && editingTitleDocumentId === document.id}
+						<div class="min-w-0">
+							<Input
+								id={`document-title-${document.id}`}
+								aria-label="Document title"
+								placeholder="Untitled"
+								class="h-7 px-2 py-0 text-sm font-medium"
+								bind:value={documentTitle}
+								on:click={(event) => event.stopPropagation()}
+								on:input={() => scheduleCurrentDocumentSave(true)}
+								on:change={() => void flushCurrentDocument()}
+								on:blur={() => void finishTitleEditing()}
+								on:keydown={handleTitleKeydown}
+							/>
+							<span class="mt-1 block text-xs text-muted-foreground"
+								>{formatUpdatedAt(document.updatedAt)}</span
+							>
+						</div>
+					{:else if document.id === currentDocument?.id}
+						<button
+							type="button"
+							class="min-w-0 text-left"
+							on:click={() => startTitleEditing(document)}
+						>
+							<span class="flex min-h-7 items-center gap-1">
+								<span class="truncate font-medium">{documentTitle || 'Untitled'}</span>
+								<Pencil class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+							</span>
+							<span class="mt-1 block text-xs text-muted-foreground"
+								>{formatUpdatedAt(document.updatedAt)}</span
+							>
+						</button>
+					{:else}
+						<button
+							type="button"
+							class="min-w-0 text-left"
+							on:click={() => switchDocument(document.id)}
+						>
+							<span class="block min-h-5 truncate font-medium">{document.title || 'Untitled'}</span>
+							<span class="mt-1 block text-xs text-muted-foreground"
+								>{formatUpdatedAt(document.updatedAt)}</span
+							>
+						</button>
+					{/if}
+					<button
+						type="button"
+						aria-label={`Delete ${document.title || 'Untitled'}`}
+						class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100"
+						on:click={() => deleteDocumentById(document)}
+					>
+						<Trash2 class="h-4 w-4" />
+					</button>
+				</div>
+			{/each}
+		</div>
+	</aside>
 {/if}
 
 <div class="bubble-menu rounded-md" bind:this={bubbleMenu}>
