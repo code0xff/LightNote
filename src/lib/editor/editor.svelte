@@ -164,9 +164,13 @@
 					title = `LightNote - ${documentTitle}`;
 				}
 
-				const nextDocuments = await listDocuments();
-				documents = nextDocuments.map((document) =>
-					document.id === currentDocument?.id ? { ...document, title: documentTitle } : document
+				documents = documents.map((document) =>
+					document.id === documentId
+						? {
+								...updated,
+								title: currentDocument?.id === documentId ? documentTitle : updated.title
+							}
+						: document
 				);
 			} catch (error) {
 				console.error(error);
