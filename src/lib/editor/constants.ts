@@ -63,8 +63,8 @@ export const defaultContent = `
 <pre><code>ngrok http http://localhost:1234</code></pre>
 <p style="text-align: start">Finally, connect to relay server using the ngrok proxy address and workspace name.</p>
 <p style="text-align: start"><a target="_blank" rel="noopener noreferrer nofollow" 
-href="https://code0xff.github.io/LightNote?endpoint={porxy_url}&workspace={workspace}">
-https://code0xff.github.io/LightNote?endpoint={porxy_url}&workspace={workspace}</a></p>
+href="https://code0xff.github.io/LightNote?endpoint={proxy_url}&workspace={workspace}">
+https://code0xff.github.io/LightNote?endpoint={proxy_url}&workspace={workspace}</a></p>
 <p style="text-align: start">Now, collaboration mode is active!</p>
 `;
 
@@ -154,7 +154,7 @@ export const htmlStyle = `
 
     code {
       font-family: monospace;
-      background-color: rgba(#616161, 0.1);
+      background-color: rgba(97, 97, 97, 0.1);
       color: crimson;
     }
 
@@ -162,7 +162,7 @@ export const htmlStyle = `
       display: block;
       font-family: monospace;
       white-space: pre-wrap;
-      background: rgba(#616161, 0.1);
+      background: rgba(97, 97, 97, 0.1);
       color: #616161;
       margin: 1em 0;
       padding: 1rem;
