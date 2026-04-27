@@ -10,6 +10,13 @@ export type ShareMetadata = {
 	workspace: string;
 };
 
+export type SharedDocumentReference = ShareMetadata & {
+	updatedAt: number;
+};
+
+export const SHARED_DOCUMENTS_KEY = 'sharedDocuments';
+const MAX_SHARED_DOCUMENTS = 25;
+
 function isSupportedUrl(value: string, protocols: string[]) {
 	try {
 		const url = new URL(value);
@@ -44,6 +51,10 @@ export function buildShareUrl(origin: string, pathname: string, metadata: ShareM
 	return url.toString();
 }
 
+function isSameShare(left: ShareMetadata, right: ShareMetadata) {
+	return left.endpoint === right.endpoint && left.workspace === right.workspace;
+}
+
 export function readSharedMetadata(storage: Storage): ShareMetadata | null {
 	const shared = storage.getItem('shared');
 
@@ -62,6 +73,80 @@ export function readSharedMetadata(storage: Storage): ShareMetadata | null {
 	} catch {
 		return null;
 	}
+}
+
+export function readSharedDocumentHistory(storage: Storage = localStorage) {
+	const sharedDocuments = storage.getItem(SHARED_DOCUMENTS_KEY);
+
+	if (!sharedDocuments) {
+		return [];
+	}
+
+	try {
+		const values = JSON.parse(sharedDocuments) as Partial<SharedDocumentReference>[];
+
+		if (!Array.isArray(values)) {
+			return [];
+		}
+
+		return values
+			.flatMap((value) => {
+				if (
+					typeof value.endpoint !== 'string' ||
+					typeof value.workspace !== 'string' ||
+					typeof value.updatedAt !== 'number'
+				) {
+					return [];
+				}
+
+				try {
+					return [
+						{
+							...validateShareMetadata(value.endpoint, value.workspace),
+							updatedAt: value.updatedAt
+						}
+					];
+				} catch {
+					return [];
+				}
+			})
+			.sort((a, b) => b.updatedAt - a.updatedAt)
+			.slice(0, MAX_SHARED_DOCUMENTS);
+	} catch {
+		return [];
+	}
+}
+
+export function upsertSharedDocumentHistory(
+	metadata: ShareMetadata,
+	storage: Storage = localStorage,
+	now = Date.now()
+) {
+	const normalizedMetadata = validateShareMetadata(metadata.endpoint, metadata.workspace);
+	const nextDocuments = [
+		{ ...normalizedMetadata, updatedAt: now },
+		...readSharedDocumentHistory(storage).filter(
+			(document) => !isSameShare(document, normalizedMetadata)
+		)
+	].slice(0, MAX_SHARED_DOCUMENTS);
+
+	storage.setItem(SHARED_DOCUMENTS_KEY, JSON.stringify(nextDocuments));
+
+	return nextDocuments;
+}
+
+export function removeSharedDocumentHistory(
+	metadata: ShareMetadata,
+	storage: Storage = localStorage
+) {
+	const normalizedMetadata = validateShareMetadata(metadata.endpoint, metadata.workspace);
+	const nextDocuments = readSharedDocumentHistory(storage).filter(
+		(document) => !isSameShare(document, normalizedMetadata)
+	);
+
+	storage.setItem(SHARED_DOCUMENTS_KEY, JSON.stringify(nextDocuments));
+
+	return nextDocuments;
 }
 
 export function getDefaultDownloadName(

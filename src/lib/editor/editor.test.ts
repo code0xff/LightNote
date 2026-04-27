@@ -5,8 +5,12 @@ import {
 	extractEditorContent,
 	getDefaultDownloadName,
 	normalizeDownloadName,
+	readSharedDocumentHistory,
 	readUploadedDocument,
+	removeSharedDocumentHistory,
 	readSharedMetadata,
+	SHARED_DOCUMENTS_KEY,
+	upsertSharedDocumentHistory,
 	validateShareMetadata,
 	validateUploadFile
 } from './editor';
@@ -50,6 +54,59 @@ describe('editor helpers', () => {
 		const storage = { getItem: vi.fn(() => '{bad json') } as unknown as Storage;
 
 		expect(readSharedMetadata(storage)).toBeNull();
+	});
+
+	it('stores recent shared documents by endpoint and workspace', () => {
+		const values = new Map<string, string>();
+		const storage = {
+			getItem: vi.fn((key: string) => values.get(key) ?? null),
+			setItem: vi.fn((key: string, value: string) => values.set(key, value))
+		} as unknown as Storage;
+
+		upsertSharedDocumentHistory(
+			{ endpoint: 'wss://example.com/socket', workspace: 'alpha' },
+			storage,
+			1
+		);
+		upsertSharedDocumentHistory(
+			{ endpoint: 'wss://example.com/socket', workspace: 'beta' },
+			storage,
+			2
+		);
+		upsertSharedDocumentHistory(
+			{ endpoint: 'wss://example.com/socket', workspace: 'alpha' },
+			storage,
+			3
+		);
+
+		expect(storage.setItem).toHaveBeenCalledWith(SHARED_DOCUMENTS_KEY, expect.any(String));
+		expect(readSharedDocumentHistory(storage)).toEqual([
+			{ endpoint: 'wss://example.com/socket', workspace: 'alpha', updatedAt: 3 },
+			{ endpoint: 'wss://example.com/socket', workspace: 'beta', updatedAt: 2 }
+		]);
+	});
+
+	it('removes shared documents from recent history', () => {
+		const values = new Map([
+			[
+				SHARED_DOCUMENTS_KEY,
+				JSON.stringify([
+					{ endpoint: 'wss://example.com/socket', workspace: 'alpha', updatedAt: 1 },
+					{ endpoint: 'wss://example.com/socket', workspace: 'beta', updatedAt: 2 }
+				])
+			]
+		]);
+		const storage = {
+			getItem: vi.fn((key: string) => values.get(key) ?? null),
+			setItem: vi.fn((key: string, value: string) => values.set(key, value))
+		} as unknown as Storage;
+
+		expect(
+			removeSharedDocumentHistory(
+				{ endpoint: 'wss://example.com/socket', workspace: 'alpha' },
+				storage
+			)
+		).toEqual([{ endpoint: 'wss://example.com/socket', workspace: 'beta', updatedAt: 2 }]);
 	});
 
 	it('normalizes download file names', () => {
