@@ -45,9 +45,13 @@
 		download,
 		endSharing,
 		readUploadedDocument,
+		readSharedDocumentHistory,
 		readSharedMetadata,
+		removeSharedDocumentHistory,
 		setLink,
 		startSharing,
+		upsertSharedDocumentHistory,
+		type SharedDocumentReference,
 		validateShareMetadata
 	} from './editor';
 	import {
@@ -72,6 +76,7 @@
 	let files: FileList | undefined;
 	let content: string | JSONContent = '';
 	let documents: LightNoteDocument[] = [];
+	let sharedDocuments: SharedDocumentReference[] = [];
 	let currentDocument: LightNoteDocument | null = null;
 	let documentTitle = 'Untitled';
 	let provider: HocuspocusProvider | undefined;
@@ -271,6 +276,26 @@
 		}
 	}
 
+	function isActiveSharedDocument(document: SharedDocumentReference) {
+		return document.endpoint === _endpoint && document.workspace === _workspace;
+	}
+
+	function switchSharedDocument(document: SharedDocumentReference) {
+		if (isActiveSharedDocument(document)) {
+			return;
+		}
+
+		location.replace(buildShareUrl(location.origin, location.pathname, document));
+	}
+
+	function deleteSharedDocumentByReference(document: SharedDocumentReference) {
+		if (!window.confirm(`Remove "${document.workspace}" from recent shared documents?`)) {
+			return;
+		}
+
+		sharedDocuments = removeSharedDocumentHistory(document);
+	}
+
 	async function importDocument() {
 		try {
 			const uploadedDocument = await readUploadedDocument(files);
@@ -343,6 +368,7 @@
 					await provider.connect();
 
 					localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
+					sharedDocuments = upsertSharedDocumentHistory({ endpoint, workspace });
 
 					extensions = await getExtensionsOnSharing(provider, bubbleMenu);
 				} catch (error) {
@@ -361,6 +387,7 @@
 
 					_endpoint = shared?.endpoint ?? '';
 					_workspace = shared?.workspace ?? '';
+					sharedDocuments = readSharedDocumentHistory();
 
 					extensions = getExtensions(bubbleMenu);
 					currentDocument = await ensureInitialDocument();
@@ -383,9 +410,8 @@
 				element: element,
 				editorProps: {
 					attributes: {
-						class: isSharingMode
-							? 'mt-16 md:w-[708px] md:py-8 md:px-0 md:mx-auto p-4 outline-none'
-							: 'mt-40 p-4 outline-none md:w-[708px] md:py-8 md:px-0 md:mx-auto lg:ml-[calc(18rem+(100vw-18rem-708px)/2)] lg:mt-16'
+						class:
+							'mt-40 p-4 outline-none md:w-[708px] md:py-8 md:px-0 md:mx-auto lg:ml-[calc(18rem+(100vw-18rem-708px)/2)] lg:mt-16'
 					}
 				},
 				extensions,
@@ -421,9 +447,7 @@
 {#if editor}
 	<div>
 		<nav
-			class={isSharingMode
-				? 'fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center justify-start overflow-x-auto border-b border-border bg-background px-3 py-3 lg:justify-center'
-				: 'fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center justify-start overflow-x-auto border-b border-border bg-background px-3 py-3 lg:left-72 lg:w-[calc(100%-18rem)] lg:px-4'}
+			class="fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center justify-start overflow-x-auto border-b border-border bg-background px-3 py-3 lg:left-72 lg:w-[calc(100%-18rem)] lg:px-4"
 		>
 			<Button on:click={createNewDocument} disabled={isSharingMode} class="mr-0.5 h-8 px-2">
 				<BookPlus class="h-4 w-4" />
@@ -660,80 +684,120 @@
 	</div>
 {/if}
 
-{#if editor && !isSharingMode}
+{#if editor}
 	<aside
 		class="fixed left-0 top-16 z-10 flex h-24 w-full flex-col border-b border-border bg-background lg:bottom-0 lg:top-0 lg:z-30 lg:h-auto lg:w-72 lg:border-b-0 lg:border-r"
 	>
 		<div class="hidden h-16 items-center justify-between border-b border-border px-4 lg:flex">
 			<div class="min-w-0">
 				<div class="truncate text-sm font-semibold">LightNote</div>
-				<div class="text-xs text-muted-foreground">{documents.length} documents</div>
+				<div class="text-xs text-muted-foreground">
+					{isSharingMode
+						? `${sharedDocuments.length} shared documents`
+						: `${documents.length} documents`}
+				</div>
 			</div>
 		</div>
 		<div
 			class="flex flex-1 items-start gap-2 overflow-x-auto p-3 lg:flex-col lg:items-stretch lg:overflow-y-auto"
 		>
-			{#each documents as document (document.id)}
-				<div
-					class="group grid min-h-16 w-48 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors lg:w-full lg:min-w-0 {document.id ===
-					currentDocument?.id
-						? 'border-primary bg-secondary'
-						: 'border-transparent hover:border-border hover:bg-secondary'}"
-				>
-					{#if document.id === currentDocument?.id && editingTitleDocumentId === document.id}
-						<div class="min-w-0">
-							<Input
-								id={`document-title-${document.id}`}
-								aria-label="Document title"
-								placeholder="Untitled"
-								class="h-7 px-2 py-1 text-sm font-medium"
-								bind:value={documentTitle}
-								on:click={(event) => event.stopPropagation()}
-								on:input={() => scheduleCurrentDocumentSave(true)}
-								on:change={() => void flushCurrentDocument()}
-								on:blur={() => void finishTitleEditing()}
-								on:keydown={handleTitleKeydown}
-							/>
-							<span class="mt-1 block text-xs text-muted-foreground"
-								>{formatUpdatedAt(document.updatedAt)}</span
-							>
-						</div>
-					{:else if document.id === currentDocument?.id}
-						<button
-							type="button"
-							class="min-w-0 text-left"
-							on:click={() => startTitleEditing(document)}
-						>
-							<span class="flex min-h-7 items-center gap-1">
-								<span class="truncate font-medium">{documentTitle || 'Untitled'}</span>
-								<Pencil class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-							</span>
-							<span class="mt-1 block text-xs text-muted-foreground"
-								>{formatUpdatedAt(document.updatedAt)}</span
-							>
-						</button>
-					{:else}
-						<button
-							type="button"
-							class="min-w-0 text-left"
-							on:click={() => switchDocument(document.id)}
-						>
-							<span class="block min-h-5 truncate font-medium">{document.title || 'Untitled'}</span>
-							<span class="mt-1 block text-xs text-muted-foreground"
-								>{formatUpdatedAt(document.updatedAt)}</span
-							>
-						</button>
-					{/if}
-					<button
-						type="button"
-						aria-label={`Delete ${document.title || 'Untitled'}`}
-						class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100"
-						on:click={() => deleteDocumentById(document)}
+			{#if isSharingMode}
+				{#each sharedDocuments as document (`${document.endpoint}:${document.workspace}`)}
+					<div
+						class="group grid min-h-16 w-48 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors lg:w-full lg:min-w-0 {isActiveSharedDocument(
+							document
+						)
+							? 'border-primary bg-secondary'
+							: 'border-transparent hover:border-border hover:bg-secondary'}"
 					>
-						<Trash2 class="h-4 w-4" />
-					</button>
-				</div>
-			{/each}
+						<button
+							type="button"
+							class="min-w-0 text-left"
+							on:click={() => switchSharedDocument(document)}
+						>
+							<span class="block min-h-5 truncate font-medium">{document.workspace}</span>
+							<span class="mt-1 block truncate text-xs text-muted-foreground"
+								>{document.endpoint}</span
+							>
+							<span class="mt-1 block text-xs text-muted-foreground"
+								>{formatUpdatedAt(document.updatedAt)}</span
+							>
+						</button>
+						<button
+							type="button"
+							aria-label={`Remove ${document.workspace}`}
+							class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100"
+							on:click={() => deleteSharedDocumentByReference(document)}
+						>
+							<Trash2 class="h-4 w-4" />
+						</button>
+					</div>
+				{/each}
+			{:else}
+				{#each documents as document (document.id)}
+					<div
+						class="group grid min-h-16 w-48 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors lg:w-full lg:min-w-0 {document.id ===
+						currentDocument?.id
+							? 'border-primary bg-secondary'
+							: 'border-transparent hover:border-border hover:bg-secondary'}"
+					>
+						{#if document.id === currentDocument?.id && editingTitleDocumentId === document.id}
+							<div class="min-w-0">
+								<Input
+									id={`document-title-${document.id}`}
+									aria-label="Document title"
+									placeholder="Untitled"
+									class="h-7 px-2 py-1 text-sm font-medium"
+									bind:value={documentTitle}
+									on:click={(event) => event.stopPropagation()}
+									on:input={() => scheduleCurrentDocumentSave(true)}
+									on:change={() => void flushCurrentDocument()}
+									on:blur={() => void finishTitleEditing()}
+									on:keydown={handleTitleKeydown}
+								/>
+								<span class="mt-1 block text-xs text-muted-foreground"
+									>{formatUpdatedAt(document.updatedAt)}</span
+								>
+							</div>
+						{:else if document.id === currentDocument?.id}
+							<button
+								type="button"
+								class="min-w-0 text-left"
+								on:click={() => startTitleEditing(document)}
+							>
+								<span class="flex min-h-7 items-center gap-1">
+									<span class="truncate font-medium">{documentTitle || 'Untitled'}</span>
+									<Pencil class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								</span>
+								<span class="mt-1 block text-xs text-muted-foreground"
+									>{formatUpdatedAt(document.updatedAt)}</span
+								>
+							</button>
+						{:else}
+							<button
+								type="button"
+								class="min-w-0 text-left"
+								on:click={() => switchDocument(document.id)}
+							>
+								<span class="block min-h-5 truncate font-medium"
+									>{document.title || 'Untitled'}</span
+								>
+								<span class="mt-1 block text-xs text-muted-foreground"
+									>{formatUpdatedAt(document.updatedAt)}</span
+								>
+							</button>
+						{/if}
+						<button
+							type="button"
+							aria-label={`Delete ${document.title || 'Untitled'}`}
+							class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100"
+							on:click={() => deleteDocumentById(document)}
+						>
+							<Trash2 class="h-4 w-4" />
+						</button>
+					</div>
+				{/each}
+			{/if}
 		</div>
 	</aside>
 {/if}
