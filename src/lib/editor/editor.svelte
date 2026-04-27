@@ -89,6 +89,12 @@
 
 	let title: string = 'LightNote';
 
+	function formatPageTitle(name?: string) {
+		const normalizedName = name?.trim();
+
+		return normalizedName ? `LightNote - ${normalizedName}` : 'LightNote';
+	}
+
 	function formatUpdatedAt(value: number) {
 		return new Intl.DateTimeFormat(undefined, {
 			month: 'short',
@@ -165,7 +171,7 @@
 						...updated,
 						title: documentTitle
 					};
-					title = `LightNote - ${documentTitle}`;
+					title = formatPageTitle(documentTitle);
 				}
 
 				documents = documents.map((document) =>
@@ -198,7 +204,7 @@
 	function setActiveDocument(document: LightNoteDocument) {
 		currentDocument = document;
 		documentTitle = document.title;
-		title = `LightNote - ${document.title}`;
+		title = formatPageTitle(document.title);
 		setStoredCurrentDocumentId(document.id);
 
 		if (editor) {
@@ -346,7 +352,7 @@
 						onConnect() {
 							sessionStorage.removeItem(reconnectKey);
 							localStorage.setItem('connected', JSON.stringify({ endpoint, workspace }));
-							title = `LightNote [${workspace}]`;
+							title = formatPageTitle(workspace);
 						},
 						onClose() {
 							title = 'LightNote';
@@ -393,7 +399,7 @@
 					currentDocument = await ensureInitialDocument();
 					documentTitle = currentDocument.title;
 					content = currentDocument.content;
-					title = `LightNote - ${currentDocument.title}`;
+					title = formatPageTitle(currentDocument.title);
 					documents = await listDocuments();
 				} catch (error) {
 					window.alert(error instanceof Error ? error.message : 'Failed to load documents');
