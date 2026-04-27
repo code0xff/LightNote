@@ -61,8 +61,7 @@
 		type LightNoteDocument
 	} from '$lib/documents/store';
 	import { getExtensions } from './extensions';
-	import { getExtensionsOnSharing } from './sharing';
-	import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
+	import type { HocuspocusProvider } from '@hocuspocus/provider';
 	import * as Dialog from '@/lib/components/ui/dialog';
 	import { Label } from '@/lib/components/ui/label';
 	import { Input } from '@/lib/components/ui/input';
@@ -307,6 +306,9 @@
 					_endpoint = endpoint;
 					_workspace = workspace;
 
+					const [{ HocuspocusProvider, HocuspocusProviderWebsocket }, { getExtensionsOnSharing }] =
+						await Promise.all([import('@hocuspocus/provider'), import('./sharing')]);
+
 					const websocketProvider = new HocuspocusProviderWebsocket({
 						url: endpoint,
 						maxAttempts: 1
@@ -342,7 +344,7 @@
 
 					localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
 
-					extensions = getExtensionsOnSharing(provider, bubbleMenu);
+					extensions = await getExtensionsOnSharing(provider, bubbleMenu);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : 'Unknown error';
 

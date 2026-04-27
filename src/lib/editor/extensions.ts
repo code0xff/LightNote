@@ -1,6 +1,5 @@
-import type { HocuspocusProvider } from '@hocuspocus/provider';
+import type { Extension, Extensions } from '@tiptap/core';
 import BubbleMenu from '@tiptap/extension-bubble-menu';
-import Collaboration from '@tiptap/extension-collaboration';
 import Image from '@tiptap/extension-image';
 import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -9,20 +8,15 @@ import Underline from '@tiptap/extension-underline';
 import Youtube from '@tiptap/extension-youtube';
 import StarterKit from '@tiptap/starter-kit';
 
-export function getExtensions(bubbleMenu: HTMLElement, provider?: HocuspocusProvider) {
+type ExtensionOptions = {
+	starterKit?: Extension;
+	extraExtensions?: Extensions;
+};
+
+export function getExtensions(bubbleMenu: HTMLElement, options: ExtensionOptions = {}) {
 	return [
-		provider
-			? StarterKit.configure({
-					history: false
-				})
-			: StarterKit,
-		...(provider
-			? [
-					Collaboration.configure({
-						document: provider.document
-					})
-				]
-			: []),
+		options.starterKit ?? StarterKit,
+		...(options.extraExtensions ?? []),
 		BubbleMenu.configure({
 			element: bubbleMenu
 		}),
