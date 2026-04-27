@@ -686,7 +686,7 @@
 								id={`document-title-${document.id}`}
 								aria-label="Document title"
 								placeholder="Untitled"
-								class="h-7 px-2 py-0 text-sm font-medium"
+								class="h-7 px-2 py-1 text-sm font-medium"
 								bind:value={documentTitle}
 								on:click={(event) => event.stopPropagation()}
 								on:input={() => scheduleCurrentDocumentSave(true)}
@@ -694,7 +694,7 @@
 								on:blur={() => void finishTitleEditing()}
 								on:keydown={handleTitleKeydown}
 							/>
-							<span class="mt-1 block text-xs text-muted-foreground"
+							<span class="mt-1.5 block text-xs text-muted-foreground"
 								>{formatUpdatedAt(document.updatedAt)}</span
 							>
 						</div>
