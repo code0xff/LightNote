@@ -70,9 +70,9 @@
 	import { getExtensions } from './extensions';
 	import {
 		DEFAULT_OPENAI_MODEL,
-		OPENAI_MODEL_OPTIONS,
 		generateText,
 		readOpenAiSettings,
+		resolveModelOptions,
 		toEditorHtml,
 		writeOpenAiSettings,
 		type AiAction,
@@ -376,6 +376,7 @@
 	}
 
 	function openAiDialog() {
+		aiSettings = readOpenAiSettings();
 		aiSelection = getSelectionText();
 		aiPrompt = '';
 		aiResult = '';
@@ -386,7 +387,9 @@
 
 	async function runAiAction(action: AiAction) {
 		if (!aiSettings.apiKey) {
-			aiOpen = false;
+			// Keep the AI dialog (and its captured selection/prompt) open and
+			// stack the settings dialog on top so nothing is lost.
+			aiError = 'Add your OpenAI API key in AI settings first.';
 			openAiSettings();
 			return;
 		}
@@ -1029,7 +1032,7 @@
 					class="col-span-3 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 					bind:value={aiModelInput}
 				>
-					{#each OPENAI_MODEL_OPTIONS as model}
+					{#each resolveModelOptions(aiModelInput) as model}
 						<option value={model}>{model}</option>
 					{/each}
 				</select>

@@ -5,12 +5,15 @@ import {
 	DEFAULT_OPENAI_MODEL,
 	generateText,
 	OPENAI_ENDPOINT,
+	OPENAI_MODEL_OPTIONS,
 	OPENAI_SETTINGS_KEY,
 	parseCompletion,
 	readOpenAiSettings,
+	resolveModelOptions,
 	stripWrapping,
 	toEditorHtml,
 	truncateContext,
+	truncateSelection,
 	writeOpenAiSettings
 } from './openai';
 
@@ -59,6 +62,12 @@ describe('openai settings', () => {
 			JSON.stringify({ apiKey: 'sk-key', model: 'gpt-5.6-terra' })
 		);
 	});
+
+	it('keeps built-in options as-is but prepends an unknown current model', () => {
+		expect(resolveModelOptions(DEFAULT_OPENAI_MODEL)).toEqual([...OPENAI_MODEL_OPTIONS]);
+		expect(resolveModelOptions('gpt-6-future')).toEqual(['gpt-6-future', ...OPENAI_MODEL_OPTIONS]);
+		expect(resolveModelOptions('')).toEqual([...OPENAI_MODEL_OPTIONS]);
+	});
 });
 
 describe('prompt building', () => {
@@ -105,8 +114,21 @@ describe('output handling', () => {
 	it('strips code fences and surrounding quotes', () => {
 		expect(stripWrapping('```\nhello\n```')).toBe('hello');
 		expect(stripWrapping('```text\nhello world\n```')).toBe('hello world');
+		// Single-line fences have no language tag: keep the whole inner body.
+		expect(stripWrapping('```hello```')).toBe('hello');
+		expect(stripWrapping('```hello world```')).toBe('hello world');
+		expect(stripWrapping('```{"a":1}```')).toBe('{"a":1}');
+		// Do not merge multiple fenced blocks into one wrapper.
+		expect(stripWrapping('```a``` and ```b```')).toBe('```a``` and ```b```');
 		expect(stripWrapping('"quoted"')).toBe('quoted');
 		expect(stripWrapping('“smart”')).toBe('smart');
+	});
+
+	it('caps an over-long selection from the start', () => {
+		const long = 'HEAD' + 'a'.repeat(20);
+
+		expect(truncateSelection(long, 4)).toBe('HEAD');
+		expect(truncateSelection('  short  ', 100)).toBe('short');
 	});
 
 	it('parses completion content', () => {

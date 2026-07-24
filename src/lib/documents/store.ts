@@ -97,7 +97,7 @@ function createDocumentId() {
 }
 
 export function sortDocuments(documents: LightNoteDocument[]) {
-	return documents.sort((a, b) => a.createdAt - b.createdAt);
+	return [...documents].sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export function normalizeDocument(document: LegacyLightNoteDocument): LightNoteDocument {
@@ -166,26 +166,48 @@ export async function createDocument(input: CreateDocumentInput = {}, factory?: 
 }
 
 export async function updateDocument(id: string, input: UpdateDocumentInput, factory?: IDBFactory) {
-	const existing = await getDocument(id, factory);
-
-	if (!existing) {
-		throw new Error(`Document not found: ${id}`);
-	}
-
-	const updated: LightNoteDocument = {
-		...existing,
-		...input,
-		title: input.title === undefined ? existing.title : normalizeTitle(input.title),
-		updatedAt: input.now ?? Date.now()
-	};
+	const { now, ...changes } = input;
 	const db = await openDatabase(factory);
 	const transaction = db.transaction(DOCUMENT_STORE, 'readwrite');
+	const store = transaction.objectStore(DOCUMENT_STORE);
 
-	transaction.objectStore(DOCUMENT_STORE).put(updated);
-	await transactionDone(transaction);
-	db.close();
+	// Read and write in the same transaction so concurrent updates serialize
+	// instead of clobbering each other, and so the input-only `now` never
+	// leaks into the stored/returned document.
+	const updatedPromise = new Promise<LightNoteDocument>((resolve, reject) => {
+		const getRequest = store.get(id);
 
-	return updated;
+		getRequest.onerror = () => reject(getRequest.error ?? new Error('IndexedDB request failed'));
+		getRequest.onsuccess = () => {
+			const existing = getRequest.result as LegacyLightNoteDocument | undefined;
+
+			if (!existing) {
+				reject(new Error(`Document not found: ${id}`));
+				return;
+			}
+
+			const normalized = normalizeDocument(existing);
+			const updated: LightNoteDocument = {
+				...normalized,
+				...changes,
+				title: changes.title === undefined ? normalized.title : normalizeTitle(changes.title),
+				updatedAt: now ?? Date.now()
+			};
+			const putRequest = store.put(updated);
+
+			putRequest.onerror = () => reject(putRequest.error ?? new Error('IndexedDB request failed'));
+			putRequest.onsuccess = () => resolve(updated);
+		};
+	});
+
+	try {
+		const updated = await updatedPromise;
+		await transactionDone(transaction);
+
+		return updated;
+	} finally {
+		db.close();
+	}
 }
 
 export async function deleteDocument(id: string, factory?: IDBFactory) {

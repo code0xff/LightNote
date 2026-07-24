@@ -137,17 +137,9 @@ describe('document store CRUD (IndexedDB)', () => {
 		});
 
 		const stored = await getDocument(created.id, factory);
-		expect(stored).toMatchObject({
-			id: created.id,
-			title: 'Final',
-			content: '<p>Body</p>',
-			createdAt: 1,
-			updatedAt: 5
-		});
-		// Current behaviour: updateDocument spreads `...input`, so the input-only
-		// `now` leaks into the returned object; normalizeDocument strips it on read.
-		// Phase 1 (#7) removes the leak so the returned object stays clean too.
-		expect(updated).toHaveProperty('now', 5);
+		expect(stored).toEqual(updated);
+		// The input-only `now` must not leak into the returned or stored document.
+		expect(updated).not.toHaveProperty('now');
 		expect(stored).not.toHaveProperty('now');
 	});
 
@@ -179,11 +171,13 @@ describe('document store CRUD (IndexedDB)', () => {
 
 		const finalDocument = await getDocument(created.id, factory);
 
-		// Documents current behaviour: read-modify-write across separate
-		// transactions means concurrent updates can clobber each other. This
-		// characterization test pins whatever the final row is so the Phase 1
-		// single-transaction fix can be verified against it.
-		expect(finalDocument?.id).toBe(created.id);
+		// Same-transaction read-modify-write serializes the two updates, so
+		// neither field is clobbered by the other.
+		expect(finalDocument).toMatchObject({
+			id: created.id,
+			title: 'Renamed',
+			content: '<p>New body</p>'
+		});
 	});
 });
 

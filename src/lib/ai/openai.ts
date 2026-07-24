@@ -12,6 +12,7 @@ export const OPENAI_MODEL_OPTIONS = [
 ] as const;
 
 const CONTEXT_CHARACTER_LIMIT = 4000;
+const SELECTION_CHARACTER_LIMIT = 6000;
 
 export type OpenAiSettings = {
 	apiKey: string;
@@ -63,6 +64,17 @@ export function writeOpenAiSettings(
 	storage.setItem(OPENAI_SETTINGS_KEY, JSON.stringify(normalized));
 
 	return normalized;
+}
+
+/**
+ * The selectable model list, guaranteeing the currently-configured model is
+ * present even if it is not one of the built-in options (e.g. a newer model
+ * saved by a future build) so a settings `<select>` can always show it.
+ */
+export function resolveModelOptions(current: string): string[] {
+	const base: string[] = [...OPENAI_MODEL_OPTIONS];
+
+	return current && !base.includes(current) ? [current, ...base] : base;
 }
 
 const SHARED_RULES =
@@ -138,9 +150,18 @@ export function buildMessages(action: AiAction, input: GenerateInput = {}): Chat
 export function stripWrapping(text: string): string {
 	let result = text.trim();
 
-	const fenceMatch = result.match(/^```[a-zA-Z]*\n([\s\S]*?)\n```$/);
-	if (fenceMatch) {
-		result = fenceMatch[1].trim();
+	// Strip a single wrapping code fence. Multi-line fences may carry a language
+	// tag on the opening line (```lang\n...\n```); single-line fences (```...```)
+	// have no language tag, so the whole inner body is content. Only strip when a
+	// lone fence wraps the text (no additional ``` inside).
+	const multiLineFence = result.match(/^```[a-zA-Z0-9]*\n([\s\S]*?)\n?```$/);
+	if (multiLineFence && !multiLineFence[1].includes('```')) {
+		result = multiLineFence[1].trim();
+	} else {
+		const singleLineFence = result.match(/^```([\s\S]*?)```$/);
+		if (singleLineFence && !singleLineFence[1].includes('```')) {
+			result = singleLineFence[1].trim();
+		}
 	}
 
 	if (result.length >= 2) {
@@ -188,6 +209,12 @@ export function truncateContext(text: string, limit = CONTEXT_CHARACTER_LIMIT): 
 	const trimmed = text.trim();
 
 	return trimmed.length > limit ? trimmed.slice(trimmed.length - limit) : trimmed;
+}
+
+export function truncateSelection(text: string, limit = SELECTION_CHARACTER_LIMIT): string {
+	const trimmed = text.trim();
+
+	return trimmed.length > limit ? trimmed.slice(0, limit) : trimmed;
 }
 
 async function extractErrorMessage(response: Response): Promise<string> {
@@ -265,7 +292,7 @@ export async function generateText({
 	fetchImpl
 }: GenerateOptions): Promise<string> {
 	const messages = buildMessages(action, {
-		selection,
+		selection: selection ? truncateSelection(selection) : selection,
 		context: context ? truncateContext(context) : context,
 		instruction
 	});
