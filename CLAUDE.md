@@ -31,6 +31,8 @@ Work through features in this order:
 3. **Codex review** — have Codex review the change (via the `codex` plugin, e.g. the `codex:rescue` skill) before it lands.
 4. **Commit & push** — only after the review and the checks above pass. Commit and push are done when the user asks.
 
+Commit messages **must** use the `type: message` format (e.g. `feat: add AI writing`, `fix: ...`, `docs: ...`, `refactor: ...`, `style: ...`, `chore: ...`, `test: ...`).
+
 ## Architecture
 
 LightNote is an **offline-first, client-only** note editor. There is **no backend** — SvelteKit is used with `adapter-static` and `prerender = true` to produce a static site deployed to GitHub Pages. All persistence is in the browser. Any "server" interaction (collaboration relay, OpenAI) talks directly from the browser to an external endpoint the user supplies.
