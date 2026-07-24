@@ -596,7 +596,12 @@
 		<nav
 			class="fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center justify-start overflow-x-auto border-b border-border bg-background px-3 py-3 lg:left-72 lg:w-[calc(100%-18rem)] lg:px-4"
 		>
-			<Button on:click={createNewDocument} disabled={isSharingMode} class="mr-0.5 h-8 px-2">
+			<Button
+				on:click={createNewDocument}
+				disabled={isSharingMode}
+				class="mr-0.5 h-8 px-2"
+				aria-label="New document"
+			>
 				<BookPlus class="h-4 w-4" />
 			</Button>
 			<Button
@@ -604,6 +609,7 @@
 				disabled={!editor.can().chain().focus().toggleBold().run()}
 				variant={editor.isActive('bold') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Bold"
 			>
 				<Bold class="h-4 w-4" />
 			</Button>
@@ -612,6 +618,7 @@
 				disabled={!editor.can().chain().focus().toggleItalic().run()}
 				variant={editor.isActive('italic') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Italic"
 			>
 				<Italic class="h-4 w-4" />
 			</Button>
@@ -620,6 +627,7 @@
 				disabled={!editor.can().chain().focus().toggleUnderline().run()}
 				variant={editor.isActive('underline') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Underline"
 			>
 				<Underline class="h-4 w-4" />
 			</Button>
@@ -628,6 +636,7 @@
 				disabled={!editor.can().chain().focus().toggleStrike().run()}
 				variant={editor.isActive('strike') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Strikethrough"
 			>
 				<Strikethrough class="h-4 w-4" />
 			</Button>
@@ -636,6 +645,7 @@
 				disabled={!editor.can().chain().focus().toggleCode().run()}
 				variant={editor.isActive('code') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Inline code"
 			>
 				<Code class="h-4 w-4" />
 			</Button>
@@ -643,6 +653,7 @@
 				on:click={() => editor.chain().focus().setParagraph().run()}
 				variant={editor.isActive('paragraph') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Paragraph"
 			>
 				<Pilcrow class="h-4 w-4" />
 			</Button>
@@ -650,6 +661,7 @@
 				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
 				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Heading 1"
 			>
 				<Heading1 class="h-4 w-4" />
 			</Button>
@@ -657,6 +669,7 @@
 				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
 				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Heading 2"
 			>
 				<Heading2 class="h-4 w-4" />
 			</Button>
@@ -664,6 +677,7 @@
 				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
 				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Heading 3"
 			>
 				<Heading3 class="h-4 w-4" />
 			</Button>
@@ -671,6 +685,7 @@
 				on:click={() => editor.chain().focus().setTextAlign('left').run()}
 				class="mx-0.5 h-8 px-2"
 				variant={editor.isActive({ textAlign: 'left' }) ? 'default' : 'secondary'}
+				aria-label="Align left"
 			>
 				<AlignLeft class="h-4 w-4" />
 			</Button>
@@ -678,6 +693,7 @@
 				on:click={() => editor.chain().focus().setTextAlign('center').run()}
 				class="mx-0.5 h-8 px-2"
 				variant={editor.isActive({ textAlign: 'center' }) ? 'default' : 'secondary'}
+				aria-label="Align center"
 			>
 				<AlignCenter class="h-4 w-4" />
 			</Button>
@@ -685,6 +701,7 @@
 				on:click={() => editor.chain().focus().setTextAlign('right').run()}
 				class="mx-0.5 h-8 px-2"
 				variant={editor.isActive({ textAlign: 'right' }) ? 'default' : 'secondary'}
+				aria-label="Align right"
 			>
 				<AlignRight class="h-4 w-4" />
 			</Button>
@@ -692,12 +709,14 @@
 				on:click={() => editor.chain().focus().toggleBulletList().run()}
 				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Bullet list"
 				><List class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().toggleOrderedList().run()}
 				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Ordered list"
 			>
 				<ListOrdered class="h-4 w-4" />
 			</Button>
@@ -705,6 +724,7 @@
 				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
 				variant={editor.isActive('codeBlock') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Code block"
 			>
 				<Braces class="h-4 w-4" />
 			</Button>
@@ -712,37 +732,44 @@
 				on:click={() => editor.chain().focus().toggleBlockquote().run()}
 				variant={editor.isActive('blockquote') ? 'default' : 'secondary'}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Blockquote"
 			>
 				<TextQuote class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => editor.chain().focus().setHorizontalRule().run()}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Horizontal rule"
 			>
 				<SeparatorHorizontal class="h-4 w-4" />
 			</Button>
 			<Button
 				on:click={() => setLink(editor)}
 				variant={editor.isActive('link') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"><Link2 class="h-4 w-4" /></Button
+				class="mx-0.5 h-8 px-2"
+				aria-label="Add or edit link"><Link2 class="h-4 w-4" /></Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().unsetLink().run()}
 				disabled={!editor.isActive('link')}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Remove link"
 			>
 				<Link2Off class="h-4 w-4" />
 			</Button>
-			<Button on:click={() => addImage(editor)} class="mx-0.5 h-8 px-2"
+			<Button on:click={() => addImage(editor)} class="mx-0.5 h-8 px-2" aria-label="Insert image"
 				><ImagePlus class="h-4 w-4" /></Button
 			>
-			<Button on:click={() => addYoutube(editor)} class="mx-0.5 h-8 px-2"
-				><MonitorPlay class="h-4 w-4" /></Button
+			<Button
+				on:click={() => addYoutube(editor)}
+				class="mx-0.5 h-8 px-2"
+				aria-label="Insert YouTube video"><MonitorPlay class="h-4 w-4" /></Button
 			>
 			<Button
 				on:click={() => editor.chain().focus().undo().run()}
 				disabled={!editor.can().chain().focus().undo().run()}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Undo"
 			>
 				<Undo class="h-4 w-4" />
 			</Button>
@@ -750,11 +777,14 @@
 				on:click={() => editor.chain().focus().redo().run()}
 				disabled={!editor.can().chain().focus().redo().run()}
 				class="mx-0.5 h-8 px-2"
+				aria-label="Redo"
 			>
 				<Redo class="h-4 w-4" />
 			</Button>
-			<Button on:click={() => download(editor, currentDocument?.title)} class="mx-0.5 h-8 px-2"
-				><FileDown class="h-4 w-4" /></Button
+			<Button
+				on:click={() => download(editor, currentDocument?.title)}
+				class="mx-0.5 h-8 px-2"
+				aria-label="Download as HTML"><FileDown class="h-4 w-4" /></Button
 			>
 			<input
 				type="file"
@@ -767,11 +797,12 @@
 			<Button
 				on:click={() => document.getElementById('selectedFile')?.click()}
 				disabled={isSharingMode}
-				class="mx-0.5 h-8 px-2"><FileUp class="h-4 w-4" /></Button
+				class="mx-0.5 h-8 px-2"
+				aria-label="Import HTML file"><FileUp class="h-4 w-4" /></Button
 			>
 			<Dialog.Root closeOnOutsideClick={false}>
 				<Dialog.Trigger>
-					<Button class="mx-0.5 h-8 px-2">
+					<Button class="mx-0.5 h-8 px-2" aria-label="Share">
 						<ScreenShare class="h-4 w-4" />
 					</Button>
 				</Dialog.Trigger>
@@ -823,8 +854,11 @@
 					</Dialog.Footer>
 				</Dialog.Content>
 			</Dialog.Root>
-			<Button on:click={() => endSharing(provider)} disabled={!provider} class="mx-0.5 h-8 px-2"
-				><ScreenShareOff class="h-4 w-4" /></Button
+			<Button
+				on:click={() => endSharing(provider)}
+				disabled={!provider}
+				class="mx-0.5 h-8 px-2"
+				aria-label="Stop sharing"><ScreenShareOff class="h-4 w-4" /></Button
 			>
 			<Button on:click={openAiDialog} class="mx-0.5 h-8 px-2" aria-label="AI writing">
 				<Sparkles class="h-4 w-4" />
@@ -832,7 +866,9 @@
 			<Button on:click={openAiSettings} class="mx-0.5 h-8 px-2" aria-label="AI settings">
 				<Settings2 class="h-4 w-4" />
 			</Button>
-			<Button on:click={toggleMode} class="ml-0.5 h-8 px-2"><SunMoon class="h-4 w-4" /></Button>
+			<Button on:click={toggleMode} class="ml-0.5 h-8 px-2" aria-label="Toggle theme"
+				><SunMoon class="h-4 w-4" /></Button
+			>
 		</nav>
 	</div>
 {/if}
@@ -961,6 +997,7 @@
 			on:click={() => editor.chain().focus().toggleBold().run()}
 			variant={editor.isActive('bold') ? 'default' : 'secondary'}
 			class="h-8 px-2"
+			aria-label="Bold"
 		>
 			<Bold class="h-4 w-4" />
 		</Button>
@@ -968,6 +1005,7 @@
 			on:click={() => editor.chain().focus().toggleItalic().run()}
 			variant={editor.isActive('italic') ? 'default' : 'secondary'}
 			class="h-8 px-2"
+			aria-label="Italic"
 		>
 			<Italic class="h-4 w-4" />
 		</Button>
@@ -975,6 +1013,7 @@
 			on:click={() => editor.chain().focus().toggleStrike().run()}
 			variant={editor.isActive('strike') ? 'default' : 'secondary'}
 			class="h-8 px-2"
+			aria-label="Strikethrough"
 		>
 			<Strikethrough class="h-4 w-4" />
 		</Button>
@@ -982,6 +1021,7 @@
 			on:click={() => editor.chain().focus().toggleUnderline().run()}
 			variant={editor.isActive('underline') ? 'default' : 'secondary'}
 			class="h-8 px-2"
+			aria-label="Underline"
 		>
 			<Underline class="h-4 w-4" />
 		</Button>
@@ -989,6 +1029,7 @@
 			on:click={() => editor.chain().focus().toggleCode().run()}
 			variant={editor.isActive('code') ? 'default' : 'secondary'}
 			class="h-8 px-2"
+			aria-label="Inline code"
 		>
 			<Code class="h-4 w-4" />
 		</Button>
