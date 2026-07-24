@@ -23,7 +23,6 @@
 		Link2Off,
 		List,
 		ListOrdered,
-		Loader2,
 		Pencil,
 		Pilcrow,
 		Redo,
@@ -72,12 +71,14 @@
 		DEFAULT_OPENAI_MODEL,
 		generateText,
 		readOpenAiSettings,
-		resolveModelOptions,
 		toEditorHtml,
 		writeOpenAiSettings,
 		type AiAction,
 		type OpenAiSettings
 	} from '$lib/ai/openai';
+	import { checkAiRequest } from '$lib/ai/actions';
+	import AiSettingsDialog from './AiSettingsDialog.svelte';
+	import AiWritingDialog from './AiWritingDialog.svelte';
 	import type { HocuspocusProvider } from '@hocuspocus/provider';
 	import * as Dialog from '@/lib/components/ui/dialog';
 	import { Label } from '@/lib/components/ui/label';
@@ -386,24 +387,23 @@
 	}
 
 	async function runAiAction(action: AiAction) {
-		if (!aiSettings.apiKey) {
+		const check = checkAiRequest({
+			action,
+			hasApiKey: Boolean(aiSettings.apiKey),
+			selection: aiSelection,
+			prompt: aiPrompt
+		});
+
+		if (check.status === 'needs-api-key') {
 			// Keep the AI dialog (and its captured selection/prompt) open and
 			// stack the settings dialog on top so nothing is lost.
-			aiError = 'Add your OpenAI API key in AI settings first.';
+			aiError = check.message;
 			openAiSettings();
 			return;
 		}
 
-		if (
-			(action === 'rewrite' || action === 'summarize' || action === 'proofread') &&
-			!aiSelection
-		) {
-			aiError = 'Select some text first.';
-			return;
-		}
-
-		if (action === 'prompt' && !aiPrompt.trim()) {
-			aiError = 'Enter a prompt.';
+		if (check.status === 'invalid') {
+			aiError = check.message;
 			return;
 		}
 
@@ -1000,141 +1000,22 @@
 
 <div bind:this={element} />
 
-<Dialog.Root bind:open={aiSettingsOpen} closeOnOutsideClick={false}>
-	<Dialog.Content class="sm:max-w-[425px]">
-		<Dialog.Header>
-			<Dialog.Title>AI settings</Dialog.Title>
-			<Dialog.Description>
-				Enter your OpenAI API key. It is stored only in this browser and sent directly to OpenAI.
-			</Dialog.Description>
-		</Dialog.Header>
-		<div class="grid gap-4 py-4">
-			<div class="grid grid-cols-4 items-center gap-4">
-				<Label for="openai-key" class="text-left">API key</Label>
-				<Input
-					id="openai-key"
-					type="password"
-					placeholder="sk-..."
-					class="col-span-3"
-					bind:value={aiApiKeyInput}
-					on:keydown={(e) => {
-						if (e.code === 'Enter') {
-							e.preventDefault();
-							saveAiSettings();
-						}
-					}}
-				/>
-			</div>
-			<div class="grid grid-cols-4 items-center gap-4">
-				<Label for="openai-model" class="text-left">Model</Label>
-				<select
-					id="openai-model"
-					class="col-span-3 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-					bind:value={aiModelInput}
-				>
-					{#each resolveModelOptions(aiModelInput) as model}
-						<option value={model}>{model}</option>
-					{/each}
-				</select>
-			</div>
-		</div>
-		<Dialog.Footer>
-			<Button class="w-full" variant="outline" on:click={saveAiSettings}>Save</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+<AiSettingsDialog
+	bind:open={aiSettingsOpen}
+	bind:apiKey={aiApiKeyInput}
+	bind:model={aiModelInput}
+	onSave={saveAiSettings}
+/>
 
-<Dialog.Root bind:open={aiOpen} closeOnOutsideClick={false}>
-	<Dialog.Content class="sm:max-w-[520px]">
-		<Dialog.Header>
-			<Dialog.Title>AI writing</Dialog.Title>
-			<Dialog.Description>
-				{aiSelection
-					? 'Transform the selected text or write a custom instruction.'
-					: 'Continue writing from the cursor or describe what to generate.'}
-			</Dialog.Description>
-		</Dialog.Header>
-		<div class="grid gap-4 py-2">
-			{#if aiSelection}
-				<div
-					class="max-h-24 overflow-y-auto rounded-md border border-border bg-secondary/50 p-2 text-xs text-muted-foreground"
-				>
-					{aiSelection}
-				</div>
-				<div class="flex flex-wrap gap-2">
-					<Button
-						variant="secondary"
-						class="h-8 px-3"
-						disabled={aiBusy}
-						on:click={() => runAiAction('rewrite')}>Rewrite</Button
-					>
-					<Button
-						variant="secondary"
-						class="h-8 px-3"
-						disabled={aiBusy}
-						on:click={() => runAiAction('summarize')}>Summarize</Button
-					>
-					<Button
-						variant="secondary"
-						class="h-8 px-3"
-						disabled={aiBusy}
-						on:click={() => runAiAction('proofread')}>Proofread</Button
-					>
-				</div>
-			{:else}
-				<div class="flex flex-wrap gap-2">
-					<Button
-						variant="secondary"
-						class="h-8 px-3"
-						disabled={aiBusy}
-						on:click={() => runAiAction('continue')}>Continue writing</Button
-					>
-				</div>
-			{/if}
-			<div class="grid gap-2">
-				<Label for="ai-prompt">Prompt</Label>
-				<textarea
-					id="ai-prompt"
-					rows="3"
-					placeholder={aiSelection
-						? 'Optional: how should the selection be changed?'
-						: 'Describe what to write...'}
-					class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-					bind:value={aiPrompt}
-				></textarea>
-				<Button
-					variant="secondary"
-					class="h-8 w-full px-3"
-					disabled={aiBusy}
-					on:click={() => runAiAction('prompt')}>Generate from prompt</Button
-				>
-			</div>
-			{#if aiBusy}
-				<div class="flex items-center justify-between text-sm text-muted-foreground">
-					<span class="flex items-center gap-2">
-						<Loader2 class="h-4 w-4 animate-spin" /> Generating...
-					</span>
-					<Button variant="secondary" class="h-8 px-3" on:click={cancelAiRequest}>Cancel</Button>
-				</div>
-			{/if}
-			{#if aiError}
-				<div class="text-sm text-destructive">{aiError}</div>
-			{/if}
-			{#if aiResult}
-				<div
-					class="max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border border-border p-2 text-sm"
-				>
-					{aiResult}
-				</div>
-				<div class="flex flex-wrap justify-end gap-2">
-					{#if aiSelection}
-						<Button variant="outline" class="h-8 px-3" on:click={replaceSelectionWithResult}
-							>Replace selection</Button
-						>
-					{/if}
-					<Button class="h-8 px-3" on:click={insertResultAtCursor}>Insert at cursor</Button>
-				</div>
-			{/if}
-		</div>
-	</Dialog.Content>
-</Dialog.Root>
+<AiWritingDialog
+	bind:open={aiOpen}
+	selection={aiSelection}
+	bind:prompt={aiPrompt}
+	result={aiResult}
+	error={aiError}
+	busy={aiBusy}
+	onAction={runAiAction}
+	onCancel={cancelAiRequest}
+	onReplaceSelection={replaceSelectionWithResult}
+	onInsertAtCursor={insertResultAtCursor}
+/>
