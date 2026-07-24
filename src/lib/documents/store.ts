@@ -82,6 +82,25 @@ function openDatabase(factory?: IDBFactory) {
 	return requestToPromise(request);
 }
 
+async function withStore<T>(
+	mode: IDBTransactionMode,
+	run: (store: IDBObjectStore) => IDBRequest<T>,
+	factory?: IDBFactory
+): Promise<T> {
+	const db = await openDatabase(factory);
+	const transaction = db.transaction(DOCUMENT_STORE, mode);
+	const store = transaction.objectStore(DOCUMENT_STORE);
+
+	try {
+		const result = await requestToPromise(run(store));
+		await transactionDone(transaction);
+
+		return result;
+	} finally {
+		db.close();
+	}
+}
+
 function normalizeTitle(title: string | undefined) {
 	const normalizedTitle = title?.trim();
 
@@ -121,25 +140,21 @@ export function setStoredCurrentDocumentId(id: string, storage: Storage = localS
 }
 
 export async function listDocuments(factory?: IDBFactory) {
-	const db = await openDatabase(factory);
-	const transaction = db.transaction(DOCUMENT_STORE, 'readonly');
-	const store = transaction.objectStore(DOCUMENT_STORE);
-	const documents = await requestToPromise<LegacyLightNoteDocument[]>(store.getAll());
-
-	await transactionDone(transaction);
-	db.close();
+	const documents = await withStore<LegacyLightNoteDocument[]>(
+		'readonly',
+		(store) => store.getAll(),
+		factory
+	);
 
 	return sortDocuments(documents.map(normalizeDocument));
 }
 
 export async function getDocument(id: string, factory?: IDBFactory) {
-	const db = await openDatabase(factory);
-	const transaction = db.transaction(DOCUMENT_STORE, 'readonly');
-	const store = transaction.objectStore(DOCUMENT_STORE);
-	const document = await requestToPromise<LegacyLightNoteDocument | undefined>(store.get(id));
-
-	await transactionDone(transaction);
-	db.close();
+	const document = await withStore<LegacyLightNoteDocument | undefined>(
+		'readonly',
+		(store) => store.get(id),
+		factory
+	);
 
 	return document ? normalizeDocument(document) : null;
 }
@@ -155,12 +170,8 @@ export async function createDocument(input: CreateDocumentInput = {}, factory?: 
 		updatedAt: now,
 		sourceFileName: input.sourceFileName
 	};
-	const db = await openDatabase(factory);
-	const transaction = db.transaction(DOCUMENT_STORE, 'readwrite');
 
-	transaction.objectStore(DOCUMENT_STORE).add(document);
-	await transactionDone(transaction);
-	db.close();
+	await withStore('readwrite', (store) => store.add(document), factory);
 
 	return document;
 }
@@ -211,12 +222,7 @@ export async function updateDocument(id: string, input: UpdateDocumentInput, fac
 }
 
 export async function deleteDocument(id: string, factory?: IDBFactory) {
-	const db = await openDatabase(factory);
-	const transaction = db.transaction(DOCUMENT_STORE, 'readwrite');
-
-	transaction.objectStore(DOCUMENT_STORE).delete(id);
-	await transactionDone(transaction);
-	db.close();
+	await withStore('readwrite', (store) => store.delete(id), factory);
 }
 
 export async function migrateLegacyAutoSave(storage: Storage = localStorage, factory?: IDBFactory) {

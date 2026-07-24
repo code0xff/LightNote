@@ -1,5 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
+import { escapeHtml, isSupportedUrl } from '$lib/utils';
 import { htmlStyle } from './constants';
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -16,15 +17,6 @@ export type SharedDocumentReference = ShareMetadata & {
 
 export const SHARED_DOCUMENTS_KEY = 'sharedDocuments';
 const MAX_SHARED_DOCUMENTS = 25;
-
-function isSupportedUrl(value: string, protocols: string[]) {
-	try {
-		const url = new URL(value);
-		return protocols.includes(url.protocol);
-	} catch {
-		return false;
-	}
-}
 
 export function validateShareMetadata(endpoint: string, workspace: string): ShareMetadata {
 	const metadata = {
@@ -221,15 +213,6 @@ export async function readUploadedDocument(files: FileList | undefined) {
 		contentFormat: 'html' as const,
 		sourceFileName: file.name
 	};
-}
-
-function escapeHtml(value: string) {
-	return value
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
 }
 
 export function download(editor: Editor, preferredName?: string) {

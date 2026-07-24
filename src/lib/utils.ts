@@ -7,6 +7,24 @@ export function cn(...inputs: ClassValue[]) {
 	return twMerge(clsx(inputs));
 }
 
+export function escapeHtml(value: string) {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
+export function isSupportedUrl(value: string, protocols: string[]) {
+	try {
+		const url = new URL(value);
+		return protocols.includes(url.protocol);
+	} catch {
+		return false;
+	}
+}
+
 type FlyAndScaleParams = {
 	y?: number;
 	x?: number;

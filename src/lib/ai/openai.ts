@@ -1,3 +1,5 @@
+import { escapeHtml } from '$lib/utils';
+
 export const OPENAI_SETTINGS_KEY = 'openai';
 
 export const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
@@ -184,15 +186,6 @@ export function parseCompletion(data: unknown): string {
 	}
 
 	return stripWrapping(content);
-}
-
-function escapeHtml(value: string): string {
-	return value
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
 }
 
 export function toEditorHtml(text: string): string {
