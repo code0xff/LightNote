@@ -22,6 +22,15 @@ npm run deploy     # build + publish build/ to GitHub Pages (gh-pages branch)
 
 Before publishing changes, the README expects all of `check`, `lint`, `test -- --run`, and `build` to pass.
 
+## Development workflow
+
+Work through features in this order:
+
+1. **Plan** — outline the approach before writing code (surface the design, affected files, and trade-offs).
+2. **Implement** — make the change, keeping the logic-in-`.ts` / UI-in-`.svelte` convention below.
+3. **Codex review** — have Codex review the change (via the `codex` plugin, e.g. the `codex:rescue` skill) before it lands.
+4. **Commit & push** — only after the review and the checks above pass. Commit and push are done when the user asks.
+
 ## Architecture
 
 LightNote is an **offline-first, client-only** note editor. There is **no backend** — SvelteKit is used with `adapter-static` and `prerender = true` to produce a static site deployed to GitHub Pages. All persistence is in the browser. Any "server" interaction (collaboration relay, OpenAI) talks directly from the browser to an external endpoint the user supplies.
