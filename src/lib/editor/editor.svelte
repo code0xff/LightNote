@@ -23,6 +23,7 @@
 		Link2Off,
 		List,
 		ListOrdered,
+		MoreHorizontal,
 		Pencil,
 		Pilcrow,
 		Redo,
@@ -79,10 +80,14 @@
 	import { checkAiRequest } from '$lib/ai/actions';
 	import AiSettingsDialog from './AiSettingsDialog.svelte';
 	import AiPromptPanel from './AiPromptPanel.svelte';
+	import ToolbarButton from './ToolbarButton.svelte';
 	import type { HocuspocusProvider } from '@hocuspocus/provider';
 	import * as Dialog from '@/lib/components/ui/dialog';
+	import * as Popover from '@/lib/components/ui/popover';
+	import { buttonVariants } from '@/lib/components/ui/button';
 	import { Label } from '@/lib/components/ui/label';
 	import { Input } from '@/lib/components/ui/input';
+	import type { ComponentType } from 'svelte';
 
 	let element: Element;
 	let editor: Editor;
@@ -100,6 +105,19 @@
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let saveQueue: Promise<void> = Promise.resolve();
 	let editingTitleDocumentId: string | null = null;
+	let shareDialogOpen = false;
+	let toolbarOverflowOpen = false;
+
+	type ToolbarItem = {
+		key: string;
+		label: string;
+		icon: ComponentType;
+		onClick: () => void;
+		active?: boolean;
+		disabled?: boolean;
+		primary?: boolean;
+	};
+	type ToolbarGroup = { id: string; label: string; items: ToolbarItem[] };
 
 	let aiSettings: OpenAiSettings = { apiKey: '', model: DEFAULT_OPENAI_MODEL };
 	let aiSettingsOpen = false;
@@ -496,6 +514,320 @@
 		clearAiSelection();
 	}
 
+	/**
+	 * Build the toolbar as grouped data so it can render two ways from one
+	 * source: the full grouped bar on desktop and a compact primary set plus an
+	 * overflow menu on mobile. Active/disabled states are computed eagerly and
+	 * recomputed whenever `editor` is reassigned (see the `onTransaction` hook).
+	 */
+	function buildToolbarGroups(
+		activeEditor: Editor,
+		sharing: boolean,
+		activeProvider: HocuspocusProvider | undefined,
+		doc: LightNoteDocument | null
+	): ToolbarGroup[] {
+		return [
+			{
+				id: 'doc',
+				label: 'Document',
+				items: [
+					{
+						key: 'new',
+						label: 'New document',
+						icon: BookPlus,
+						onClick: createNewDocument,
+						disabled: sharing,
+						primary: true
+					}
+				]
+			},
+			{
+				id: 'format',
+				label: 'Format',
+				items: [
+					{
+						key: 'bold',
+						label: 'Bold',
+						icon: Bold,
+						onClick: () => activeEditor.chain().focus().toggleBold().run(),
+						active: activeEditor.isActive('bold'),
+						disabled: !activeEditor.can().chain().focus().toggleBold().run(),
+						primary: true
+					},
+					{
+						key: 'italic',
+						label: 'Italic',
+						icon: Italic,
+						onClick: () => activeEditor.chain().focus().toggleItalic().run(),
+						active: activeEditor.isActive('italic'),
+						disabled: !activeEditor.can().chain().focus().toggleItalic().run(),
+						primary: true
+					},
+					{
+						key: 'underline',
+						label: 'Underline',
+						icon: Underline,
+						onClick: () => activeEditor.chain().focus().toggleUnderline().run(),
+						active: activeEditor.isActive('underline'),
+						disabled: !activeEditor.can().chain().focus().toggleUnderline().run()
+					},
+					{
+						key: 'strike',
+						label: 'Strikethrough',
+						icon: Strikethrough,
+						onClick: () => activeEditor.chain().focus().toggleStrike().run(),
+						active: activeEditor.isActive('strike'),
+						disabled: !activeEditor.can().chain().focus().toggleStrike().run()
+					},
+					{
+						key: 'code',
+						label: 'Inline code',
+						icon: Code,
+						onClick: () => activeEditor.chain().focus().toggleCode().run(),
+						active: activeEditor.isActive('code'),
+						disabled: !activeEditor.can().chain().focus().toggleCode().run()
+					}
+				]
+			},
+			{
+				id: 'heading',
+				label: 'Headings',
+				items: [
+					{
+						key: 'paragraph',
+						label: 'Paragraph',
+						icon: Pilcrow,
+						onClick: () => activeEditor.chain().focus().setParagraph().run(),
+						active: activeEditor.isActive('paragraph')
+					},
+					{
+						key: 'h1',
+						label: 'Heading 1',
+						icon: Heading1,
+						onClick: () => activeEditor.chain().focus().toggleHeading({ level: 1 }).run(),
+						active: activeEditor.isActive('heading', { level: 1 })
+					},
+					{
+						key: 'h2',
+						label: 'Heading 2',
+						icon: Heading2,
+						onClick: () => activeEditor.chain().focus().toggleHeading({ level: 2 }).run(),
+						active: activeEditor.isActive('heading', { level: 2 }),
+						primary: true
+					},
+					{
+						key: 'h3',
+						label: 'Heading 3',
+						icon: Heading3,
+						onClick: () => activeEditor.chain().focus().toggleHeading({ level: 3 }).run(),
+						active: activeEditor.isActive('heading', { level: 3 })
+					}
+				]
+			},
+			{
+				id: 'align',
+				label: 'Alignment',
+				items: [
+					{
+						key: 'align-left',
+						label: 'Align left',
+						icon: AlignLeft,
+						onClick: () => activeEditor.chain().focus().setTextAlign('left').run(),
+						active: activeEditor.isActive({ textAlign: 'left' })
+					},
+					{
+						key: 'align-center',
+						label: 'Align center',
+						icon: AlignCenter,
+						onClick: () => activeEditor.chain().focus().setTextAlign('center').run(),
+						active: activeEditor.isActive({ textAlign: 'center' })
+					},
+					{
+						key: 'align-right',
+						label: 'Align right',
+						icon: AlignRight,
+						onClick: () => activeEditor.chain().focus().setTextAlign('right').run(),
+						active: activeEditor.isActive({ textAlign: 'right' })
+					}
+				]
+			},
+			{
+				id: 'blocks',
+				label: 'Lists & blocks',
+				items: [
+					{
+						key: 'bullet-list',
+						label: 'Bullet list',
+						icon: List,
+						onClick: () => activeEditor.chain().focus().toggleBulletList().run(),
+						active: activeEditor.isActive('bulletList'),
+						primary: true
+					},
+					{
+						key: 'ordered-list',
+						label: 'Ordered list',
+						icon: ListOrdered,
+						onClick: () => activeEditor.chain().focus().toggleOrderedList().run(),
+						active: activeEditor.isActive('orderedList')
+					},
+					{
+						key: 'code-block',
+						label: 'Code block',
+						icon: Braces,
+						onClick: () => activeEditor.chain().focus().toggleCodeBlock().run(),
+						active: activeEditor.isActive('codeBlock')
+					},
+					{
+						key: 'blockquote',
+						label: 'Blockquote',
+						icon: TextQuote,
+						onClick: () => activeEditor.chain().focus().toggleBlockquote().run(),
+						active: activeEditor.isActive('blockquote')
+					},
+					{
+						key: 'hr',
+						label: 'Horizontal rule',
+						icon: SeparatorHorizontal,
+						onClick: () => activeEditor.chain().focus().setHorizontalRule().run()
+					}
+				]
+			},
+			{
+				id: 'insert',
+				label: 'Insert',
+				items: [
+					{
+						key: 'link',
+						label: 'Add or edit link',
+						icon: Link2,
+						onClick: () => setLink(activeEditor),
+						active: activeEditor.isActive('link')
+					},
+					{
+						key: 'unlink',
+						label: 'Remove link',
+						icon: Link2Off,
+						onClick: () => activeEditor.chain().focus().unsetLink().run(),
+						disabled: !activeEditor.isActive('link')
+					},
+					{
+						key: 'image',
+						label: 'Insert image',
+						icon: ImagePlus,
+						onClick: () => addImage(activeEditor)
+					},
+					{
+						key: 'youtube',
+						label: 'Insert YouTube video',
+						icon: MonitorPlay,
+						onClick: () => addYoutube(activeEditor)
+					}
+				]
+			},
+			{
+				id: 'history',
+				label: 'History',
+				items: [
+					{
+						key: 'undo',
+						label: 'Undo',
+						icon: Undo,
+						onClick: () => activeEditor.chain().focus().undo().run(),
+						disabled: !activeEditor.can().chain().focus().undo().run()
+					},
+					{
+						key: 'redo',
+						label: 'Redo',
+						icon: Redo,
+						onClick: () => activeEditor.chain().focus().redo().run(),
+						disabled: !activeEditor.can().chain().focus().redo().run()
+					}
+				]
+			},
+			{
+				id: 'file',
+				label: 'File',
+				items: [
+					{
+						key: 'download',
+						label: 'Download as HTML',
+						icon: FileDown,
+						onClick: () => download(activeEditor, doc?.title)
+					},
+					{
+						key: 'import',
+						label: 'Import HTML file',
+						icon: FileUp,
+						onClick: () => window.document.getElementById('selectedFile')?.click(),
+						disabled: sharing
+					}
+				]
+			},
+			{
+				id: 'share',
+				label: 'Share',
+				items: [
+					{
+						key: 'share',
+						label: 'Share',
+						icon: ScreenShare,
+						onClick: () => (shareDialogOpen = true)
+					},
+					{
+						key: 'stop-share',
+						label: 'Stop sharing',
+						icon: ScreenShareOff,
+						onClick: () => endSharing(activeProvider),
+						disabled: !activeProvider
+					}
+				]
+			},
+			{
+				id: 'ai',
+				label: 'AI',
+				items: [
+					{
+						key: 'ai-writing',
+						label: 'AI writing',
+						icon: Sparkles,
+						onClick: openAiPanel,
+						primary: true
+					},
+					{
+						key: 'ai-settings',
+						label: 'AI settings',
+						icon: Settings2,
+						onClick: openAiSettings
+					}
+				]
+			},
+			{
+				id: 'view',
+				label: 'View',
+				items: [
+					{
+						key: 'theme',
+						label: 'Toggle theme',
+						icon: SunMoon,
+						onClick: toggleMode
+					}
+				]
+			}
+		];
+	}
+
+	$: toolbarGroups = editor
+		? buildToolbarGroups(editor, isSharingMode, provider, currentDocument)
+		: [];
+	$: primaryToolbarItems = toolbarGroups.flatMap((group) =>
+		group.items.filter((item) => item.primary)
+	);
+
+	function runToolbarItem(item: ToolbarItem) {
+		item.onClick();
+		toolbarOverflowOpen = false;
+	}
+
 	onMount(() => {
 		aiSettings = readOpenAiSettings();
 
@@ -632,198 +964,8 @@
 {#if editor}
 	<div>
 		<nav
-			class="fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center justify-start overflow-x-auto border-b border-border bg-background px-3 py-3 lg:left-72 lg:w-[calc(100%-18rem)] lg:px-4"
+			class="fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center border-b border-border bg-background px-3 py-3 lg:left-72 lg:w-[calc(100%-18rem)] lg:px-4"
 		>
-			<Button
-				on:click={createNewDocument}
-				disabled={isSharingMode}
-				class="mr-0.5 h-8 px-2"
-				aria-label="New document"
-			>
-				<BookPlus class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleBold().run()}
-				disabled={!editor.can().chain().focus().toggleBold().run()}
-				variant={editor.isActive('bold') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Bold"
-			>
-				<Bold class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleItalic().run()}
-				disabled={!editor.can().chain().focus().toggleItalic().run()}
-				variant={editor.isActive('italic') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Italic"
-			>
-				<Italic class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleUnderline().run()}
-				disabled={!editor.can().chain().focus().toggleUnderline().run()}
-				variant={editor.isActive('underline') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Underline"
-			>
-				<Underline class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleStrike().run()}
-				disabled={!editor.can().chain().focus().toggleStrike().run()}
-				variant={editor.isActive('strike') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Strikethrough"
-			>
-				<Strikethrough class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleCode().run()}
-				disabled={!editor.can().chain().focus().toggleCode().run()}
-				variant={editor.isActive('code') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Inline code"
-			>
-				<Code class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().setParagraph().run()}
-				variant={editor.isActive('paragraph') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Paragraph"
-			>
-				<Pilcrow class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-				variant={editor.isActive('heading', { level: 1 }) ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Heading 1"
-			>
-				<Heading1 class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-				variant={editor.isActive('heading', { level: 2 }) ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Heading 2"
-			>
-				<Heading2 class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}
-				variant={editor.isActive('heading', { level: 3 }) ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Heading 3"
-			>
-				<Heading3 class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().setTextAlign('left').run()}
-				class="mx-0.5 h-8 px-2"
-				variant={editor.isActive({ textAlign: 'left' }) ? 'default' : 'secondary'}
-				aria-label="Align left"
-			>
-				<AlignLeft class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().setTextAlign('center').run()}
-				class="mx-0.5 h-8 px-2"
-				variant={editor.isActive({ textAlign: 'center' }) ? 'default' : 'secondary'}
-				aria-label="Align center"
-			>
-				<AlignCenter class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().setTextAlign('right').run()}
-				class="mx-0.5 h-8 px-2"
-				variant={editor.isActive({ textAlign: 'right' }) ? 'default' : 'secondary'}
-				aria-label="Align right"
-			>
-				<AlignRight class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleBulletList().run()}
-				variant={editor.isActive('bulletList') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Bullet list"
-				><List class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleOrderedList().run()}
-				variant={editor.isActive('orderedList') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Ordered list"
-			>
-				<ListOrdered class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleCodeBlock().run()}
-				variant={editor.isActive('codeBlock') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Code block"
-			>
-				<Braces class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().toggleBlockquote().run()}
-				variant={editor.isActive('blockquote') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Blockquote"
-			>
-				<TextQuote class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().setHorizontalRule().run()}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Horizontal rule"
-			>
-				<SeparatorHorizontal class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => setLink(editor)}
-				variant={editor.isActive('link') ? 'default' : 'secondary'}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Add or edit link"><Link2 class="h-4 w-4" /></Button
-			>
-			<Button
-				on:click={() => editor.chain().focus().unsetLink().run()}
-				disabled={!editor.isActive('link')}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Remove link"
-			>
-				<Link2Off class="h-4 w-4" />
-			</Button>
-			<Button on:click={() => addImage(editor)} class="mx-0.5 h-8 px-2" aria-label="Insert image"
-				><ImagePlus class="h-4 w-4" /></Button
-			>
-			<Button
-				on:click={() => addYoutube(editor)}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Insert YouTube video"><MonitorPlay class="h-4 w-4" /></Button
-			>
-			<Button
-				on:click={() => editor.chain().focus().undo().run()}
-				disabled={!editor.can().chain().focus().undo().run()}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Undo"
-			>
-				<Undo class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => editor.chain().focus().redo().run()}
-				disabled={!editor.can().chain().focus().redo().run()}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Redo"
-			>
-				<Redo class="h-4 w-4" />
-			</Button>
-			<Button
-				on:click={() => download(editor, currentDocument?.title)}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Download as HTML"><FileDown class="h-4 w-4" /></Button
-			>
 			<input
 				type="file"
 				id="selectedFile"
@@ -832,81 +974,67 @@
 				bind:files
 				on:change={importDocument}
 			/>
-			<Button
-				on:click={() => document.getElementById('selectedFile')?.click()}
-				disabled={isSharingMode}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Import HTML file"><FileUp class="h-4 w-4" /></Button
-			>
-			<Dialog.Root closeOnOutsideClick={false}>
-				<Dialog.Trigger>
-					<Button class="mx-0.5 h-8 px-2" aria-label="Share">
-						<ScreenShare class="h-4 w-4" />
-					</Button>
-				</Dialog.Trigger>
-				<Dialog.Content class="sm:max-w-[425px]">
-					<Dialog.Header>
-						<Dialog.Title>Share</Dialog.Title>
-						<Dialog.Description
-							>Please input relay server endpoint and workspace name</Dialog.Description
-						>
-					</Dialog.Header>
-					<div class="grid gap-4 py-4">
-						<div class="grid grid-cols-4 items-center gap-4">
-							<Label for="endpoint" class="text-left">Endpoint</Label>
-							<Input
-								id="endpoint"
-								placeholder="ws://localhost:1234"
-								class="col-span-3"
-								bind:value={_endpoint}
-								on:keydown={(e) => {
-									if (e.code === 'Enter') {
-										e.preventDefault();
-										startSharing(_endpoint, _workspace);
-									}
-								}}
+
+			<!-- Desktop: full grouped toolbar -->
+			<div class="hidden w-full items-center overflow-x-auto lg:flex">
+				{#each toolbarGroups as group, groupIndex (group.id)}
+					{#if groupIndex > 0}
+						<div class="mx-1.5 h-6 w-px shrink-0 bg-border" aria-hidden="true"></div>
+					{/if}
+					<div class="flex shrink-0 items-center gap-0.5">
+						{#each group.items as item (item.key)}
+							<ToolbarButton
+								icon={item.icon}
+								label={item.label}
+								active={item.active}
+								disabled={item.disabled}
+								on:click={item.onClick}
 							/>
-						</div>
-						<div class="grid grid-cols-4 items-center gap-4">
-							<Label for="workspace" class="text-left">Workspace</Label>
-							<Input
-								id="workspace"
-								placeholder="workspace"
-								class="col-span-3"
-								bind:value={_workspace}
-								on:keydown={(e) => {
-									if (e.code === 'Enter') {
-										e.preventDefault();
-										startSharing(_endpoint, _workspace);
-									}
-								}}
-							/>
-						</div>
+						{/each}
 					</div>
-					<Dialog.Footer>
-						<Button
-							class="w-full"
-							variant="outline"
-							on:click={() => startSharing(_endpoint, _workspace)}>Connect</Button
-						>
-					</Dialog.Footer>
-				</Dialog.Content>
-			</Dialog.Root>
-			<Button
-				on:click={() => endSharing(provider)}
-				disabled={!provider}
-				class="mx-0.5 h-8 px-2"
-				aria-label="Stop sharing"><ScreenShareOff class="h-4 w-4" /></Button
-			>
-			<Button on:click={openAiPanel} class="mx-0.5 h-8 px-2" aria-label="AI writing">
-				<Sparkles class="h-4 w-4" />
-			</Button>
-			<Button on:click={openAiSettings} class="mx-0.5 h-8 px-2" aria-label="AI settings">
-				<Settings2 class="h-4 w-4" />
-			</Button>
-			<Button on:click={toggleMode} class="ml-0.5 h-8 px-2" aria-label="Toggle theme"
-				><SunMoon class="h-4 w-4" /></Button
-			>
+				{/each}
+			</div>
+
+			<!-- Mobile: primary actions + overflow menu -->
+			<div class="flex w-full items-center gap-0.5 lg:hidden">
+				{#each primaryToolbarItems as item (item.key)}
+					<ToolbarButton
+						icon={item.icon}
+						label={item.label}
+						active={item.active}
+						disabled={item.disabled}
+						on:click={item.onClick}
+					/>
+				{/each}
+				<Popover.Root bind:open={toolbarOverflowOpen}>
+					<Popover.Trigger
+						class={buttonVariants({ variant: 'secondary', className: 'ml-auto h-8 px-2' })}
+						aria-label="More tools"
+					>
+						<MoreHorizontal class="h-4 w-4" />
+					</Popover.Trigger>
+					<Popover.Content align="end" class="w-[min(20rem,calc(100vw-1.5rem))]">
+						<div class="grid gap-3">
+							{#each toolbarGroups as group (group.id)}
+								<div class="grid gap-1.5">
+									<span class="px-1 text-xs font-medium text-muted-foreground">{group.label}</span>
+									<div class="flex flex-wrap gap-1">
+										{#each group.items as item (item.key)}
+											<ToolbarButton
+												icon={item.icon}
+												label={item.label}
+												active={item.active}
+												disabled={item.disabled}
+												on:click={() => runToolbarItem(item)}
+											/>
+										{/each}
+									</div>
+								</div>
+							{/each}
+						</div>
+					</Popover.Content>
+				</Popover.Root>
+			</div>
 		</nav>
 	</div>
 {/if}
@@ -1085,6 +1213,52 @@
 	bind:model={aiModelInput}
 	onSave={saveAiSettings}
 />
+
+<Dialog.Root bind:open={shareDialogOpen} closeOnOutsideClick={false}>
+	<Dialog.Content class="sm:max-w-[425px]">
+		<Dialog.Header>
+			<Dialog.Title>Share</Dialog.Title>
+			<Dialog.Description>Please input relay server endpoint and workspace name</Dialog.Description>
+		</Dialog.Header>
+		<div class="grid gap-4 py-4">
+			<div class="grid grid-cols-4 items-center gap-4">
+				<Label for="endpoint" class="text-left">Endpoint</Label>
+				<Input
+					id="endpoint"
+					placeholder="ws://localhost:1234"
+					class="col-span-3"
+					bind:value={_endpoint}
+					on:keydown={(e) => {
+						if (e.code === 'Enter') {
+							e.preventDefault();
+							startSharing(_endpoint, _workspace);
+						}
+					}}
+				/>
+			</div>
+			<div class="grid grid-cols-4 items-center gap-4">
+				<Label for="workspace" class="text-left">Workspace</Label>
+				<Input
+					id="workspace"
+					placeholder="workspace"
+					class="col-span-3"
+					bind:value={_workspace}
+					on:keydown={(e) => {
+						if (e.code === 'Enter') {
+							e.preventDefault();
+							startSharing(_endpoint, _workspace);
+						}
+					}}
+				/>
+			</div>
+		</div>
+		<Dialog.Footer>
+			<Button class="w-full" variant="outline" on:click={() => startSharing(_endpoint, _workspace)}
+				>Connect</Button
+			>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
 
 {#if editor}
 	<AiPromptPanel
