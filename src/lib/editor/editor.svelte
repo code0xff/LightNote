@@ -78,7 +78,7 @@
 	} from '$lib/ai/openai';
 	import { checkAiRequest } from '$lib/ai/actions';
 	import AiSettingsDialog from './AiSettingsDialog.svelte';
-	import AiWritingDialog from './AiWritingDialog.svelte';
+	import AiPromptPanel from './AiPromptPanel.svelte';
 	import type { HocuspocusProvider } from '@hocuspocus/provider';
 	import * as Dialog from '@/lib/components/ui/dialog';
 	import { Label } from '@/lib/components/ui/label';
@@ -107,11 +107,14 @@
 	let aiModelInput = DEFAULT_OPENAI_MODEL;
 	let aiOpen = false;
 	let aiSelection = '';
+	let aiSelectionRange: { from: number; to: number } | null = null;
 	let aiPrompt = '';
 	let aiResult = '';
 	let aiError = '';
 	let aiBusy = false;
 	let aiController: AbortController | undefined;
+
+	$: aiHasApiKey = Boolean(aiSettings.apiKey);
 
 	let title: string = 'LightNote';
 
@@ -356,14 +359,28 @@
 		aiSettingsOpen = false;
 	}
 
-	function getSelectionText() {
+	/**
+	 * Capture the current editor selection (text + document range) so the AI
+	 * panel can act on it even after focus moves to the prompt input, and later
+	 * restore the exact range when inserting the result.
+	 */
+	function captureSelection() {
 		if (!editor) {
-			return '';
+			aiSelection = '';
+			aiSelectionRange = null;
+			return;
 		}
 
 		const { from, to } = editor.state.selection;
+		const text = editor.state.doc.textBetween(from, to, '\n').trim();
 
-		return editor.state.doc.textBetween(from, to, '\n').trim();
+		aiSelection = text;
+		aiSelectionRange = text ? { from, to } : null;
+	}
+
+	function clearAiSelection() {
+		aiSelection = '';
+		aiSelectionRange = null;
 	}
 
 	function getContextBeforeCursor(limit = 4000) {
@@ -376,14 +393,27 @@
 		return editor.state.doc.textBetween(Math.max(0, from - limit), from, '\n').trim();
 	}
 
-	function openAiDialog() {
+	function openAiPanel() {
 		aiSettings = readOpenAiSettings();
-		aiSelection = getSelectionText();
-		aiPrompt = '';
-		aiResult = '';
+		aiApiKeyInput = aiSettings.apiKey;
+		aiModelInput = aiSettings.model;
+		captureSelection();
 		aiError = '';
 		aiBusy = false;
 		aiOpen = true;
+	}
+
+	function closeAiPanel() {
+		aiOpen = false;
+	}
+
+	function saveAiKeyFromPanel() {
+		if (!aiApiKeyInput.trim()) {
+			return;
+		}
+
+		aiSettings = writeOpenAiSettings({ apiKey: aiApiKeyInput, model: aiModelInput });
+		aiError = '';
 	}
 
 	async function runAiAction(action: AiAction) {
@@ -395,10 +425,9 @@
 		});
 
 		if (check.status === 'needs-api-key') {
-			// Keep the AI dialog (and its captured selection/prompt) open and
-			// stack the settings dialog on top so nothing is lost.
+			// The panel shows an inline API-key field in this state, so just
+			// surface the message instead of opening a separate dialog.
 			aiError = check.message;
-			openAiSettings();
 			return;
 		}
 
@@ -443,8 +472,16 @@
 			return;
 		}
 
-		editor.chain().focus().insertContent(toEditorHtml(aiResult)).run();
-		aiOpen = false;
+		const html = toEditorHtml(aiResult);
+
+		if (aiSelectionRange) {
+			editor.chain().focus().insertContentAt(aiSelectionRange, html).run();
+		} else {
+			editor.chain().focus().insertContent(html).run();
+		}
+
+		aiResult = '';
+		clearAiSelection();
 	}
 
 	function insertResultAtCursor() {
@@ -452,10 +489,11 @@
 			return;
 		}
 
-		const to = editor.state.selection.to;
+		const at = aiSelectionRange ? aiSelectionRange.to : editor.state.selection.to;
 
-		editor.chain().focus().setTextSelection(to).insertContent(toEditorHtml(aiResult)).run();
-		aiOpen = false;
+		editor.chain().focus().insertContentAt(at, toEditorHtml(aiResult)).run();
+		aiResult = '';
+		clearAiSelection();
 	}
 
 	onMount(() => {
@@ -860,7 +898,7 @@
 				class="mx-0.5 h-8 px-2"
 				aria-label="Stop sharing"><ScreenShareOff class="h-4 w-4" /></Button
 			>
-			<Button on:click={openAiDialog} class="mx-0.5 h-8 px-2" aria-label="AI writing">
+			<Button on:click={openAiPanel} class="mx-0.5 h-8 px-2" aria-label="AI writing">
 				<Sparkles class="h-4 w-4" />
 			</Button>
 			<Button on:click={openAiSettings} class="mx-0.5 h-8 px-2" aria-label="AI settings">
@@ -1033,7 +1071,7 @@
 		>
 			<Code class="h-4 w-4" />
 		</Button>
-		<Button on:click={openAiDialog} class="h-8 px-2" aria-label="AI writing">
+		<Button on:click={openAiPanel} class="h-8 px-2" aria-label="AI writing">
 			<Sparkles class="h-4 w-4" />
 		</Button>
 	{/if}
@@ -1048,15 +1086,24 @@
 	onSave={saveAiSettings}
 />
 
-<AiWritingDialog
-	bind:open={aiOpen}
-	selection={aiSelection}
-	bind:prompt={aiPrompt}
-	result={aiResult}
-	error={aiError}
-	busy={aiBusy}
-	onAction={runAiAction}
-	onCancel={cancelAiRequest}
-	onReplaceSelection={replaceSelectionWithResult}
-	onInsertAtCursor={insertResultAtCursor}
-/>
+{#if editor}
+	<AiPromptPanel
+		open={aiOpen}
+		hasApiKey={aiHasApiKey}
+		bind:apiKey={aiApiKeyInput}
+		selection={aiSelection}
+		bind:prompt={aiPrompt}
+		result={aiResult}
+		error={aiError}
+		busy={aiBusy}
+		onOpen={openAiPanel}
+		onClose={closeAiPanel}
+		onSaveKey={saveAiKeyFromPanel}
+		onAction={runAiAction}
+		onCancel={cancelAiRequest}
+		onReplaceSelection={replaceSelectionWithResult}
+		onInsertAtCursor={insertResultAtCursor}
+		onClearSelection={clearAiSelection}
+		onOpenSettings={openAiSettings}
+	/>
+{/if}
