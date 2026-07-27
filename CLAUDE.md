@@ -53,6 +53,7 @@ Testable logic is deliberately extracted out of Svelte components into plain `.t
 - `editor/editor.ts` — pure helpers (HTML import/export, share URL building/validation, upload validation, link/image/YouTube insertion).
 - `documents/store.ts` — all IndexedDB access.
 - `ai/openai.ts` — all OpenAI settings/prompt/request/response logic.
+- `ai/tools.ts` / `ai/agent.ts` / `ai/documentTools.ts` — the agent tool layer (see below).
 
 Each has a colocated `*.test.ts`. Storage-touching functions take an injectable `storage: Storage` / `factory?: IDBFactory` argument specifically so tests can pass fakes and time (`now`) is passed in rather than read from `Date.now()` internally where it matters for assertions.
 
@@ -65,6 +66,20 @@ Each has a colocated `*.test.ts`. Storage-touching functions take an injectable 
 ### AI writing (BYOK)
 
 `src/lib/ai/openai.ts` is a self-contained OpenAI client. The user supplies their own API key (stored only in `localStorage`, sent directly to `api.openai.com`). `buildMessages(action, ...)` maps the five actions (`rewrite`, `summarize`, `proofread`, `continue`, `prompt`) to chat messages; `generateText` calls the API and `toEditorHtml` turns the plain-text result into paragraph HTML for Tiptap insertion. Default model is `gpt-5.6-luna` (`OPENAI_MODEL_OPTIONS` lists the selectable models). Note: `temperature` is intentionally **not** sent — current GPT-5 models reject non-default values.
+
+### AI agent mode (tool calling)
+
+The AI panel has two modes: **Ask** (the one-shot actions above) and **Agent**, which lets the model read and change documents through tools. The layers are deliberately separate so each is unit-testable:
+
+- `ai/openai.ts` — transport. `requestChatMessage` returns the raw assistant message so `tool_calls` survive (`parseAssistantMessage` tolerates a `null` content when tool calls are present). `tools` is omitted from the request body when empty, so plain Ask-mode calls are unchanged. `createChatCompletion` is a text-only wrapper over it.
+- `ai/tools.ts` — the six tool schemas (`list_documents`, `read_document`, `insert_at_cursor`, `replace_selection`, `create_document`, `update_document`) plus pure validation. `validateToolCall` **returns** errors instead of throwing so the loop can hand them back to the model. Also classifies tools: mutating (all four writes) and store-writing (`create_document`/`update_document`, unavailable in sharing mode).
+- `ai/agent.ts` — `runAgent(instruction, deps)` drives the loop with everything injected (`executeTool`, `requestApproval`, `onEvent`, `fetchImpl`). Invariants: **mutating tools never run without approval** (no `requestApproval` ⇒ denied); every `tool_call` always gets a matching `tool` message (even when invalid, denied, or over the per-step cap); the run is bounded by `maxSteps` (8, normalized to a finite whole number) × `MAX_TOOL_CALLS_PER_STEP` (8); and `signal` is re-checked before each call and after each approval so cancelling cannot let a queued mutation through.
+- `ai/markdown.ts` — a small markdown subset (headings, flat lists, quotes, fenced code, bold/italic/inline code, links) parsed into Tiptap nodes so agent output lands as rich content. `blocksToHtml` serializes it back to HTML for appending to legacy HTML documents. Link targets are restricted to http/https/mailto; anything else keeps the label and drops the href.
+- `ai/documentTools.ts` — `createDocumentToolExecutor(deps)` binds the tools to the store and an `EditorBridge` (which receives parsed nodes, not text). **Edits to the open document go through editor commands** (undoable, Yjs-safe); only other documents are written straight to IndexedDB. The open document is _read_ from the editor because store saves are debounced.
+
+`editor.svelte` owns the UI state: mode, step timeline, and the approval prompt (a promise resolved by the Approve/Reject buttons). **Closing the panel cancels any in-flight run** — the panel is the only place a run is visible or answerable, and reopening resets that state, so a surviving run would mean hidden mutations or an approval promise nothing can resolve.
+
+The "approve automatically for this session" checkbox is a deliberate opt-out of per-call confirmation (default off, and it shows a warning while enabled); the step timeline is the audit trail for what it applied.
 
 ### Build / bundle notes
 

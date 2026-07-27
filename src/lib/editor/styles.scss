@@ -1,3 +1,32 @@
+:root {
+	--ai-panel-width: 24rem;
+}
+
+/* Make room for the right-side AI panel so it never covers the text.
+   Below `sm` the panel is a full-width overlay, so no reflow is needed. */
+.editor-shell {
+	transition: padding 180ms ease;
+}
+
+@media (min-width: 640px) {
+	.editor-shell.ai-panel-open {
+		padding-right: calc(var(--ai-panel-width) + 1rem);
+		padding-left: 1rem;
+	}
+
+	.editor-shell.ai-panel-open .tiptap {
+		width: min(708px, 100%);
+		margin-left: auto;
+		margin-right: auto;
+	}
+}
+
+@media (min-width: 1024px) {
+	.editor-shell.ai-panel-open {
+		padding-left: calc(18rem + 1rem);
+	}
+}
+
 /* Basic editor styles */
 .tiptap {
 	> * + * {

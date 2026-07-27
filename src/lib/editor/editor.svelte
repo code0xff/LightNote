@@ -78,6 +78,9 @@
 		type OpenAiSettings
 	} from '$lib/ai/openai';
 	import { checkAiRequest } from '$lib/ai/actions';
+	import { runAgent, type AgentEvent, type AgentStep, type ApprovalRequest } from '$lib/ai/agent';
+	import { createDocumentToolExecutor } from '$lib/ai/documentTools';
+	import { toolCallPreview } from '$lib/ai/tools';
 	import AiSettingsDialog from './AiSettingsDialog.svelte';
 	import AiPromptPanel from './AiPromptPanel.svelte';
 	import ToolbarButton from './ToolbarButton.svelte';
@@ -131,6 +134,15 @@
 	let aiError = '';
 	let aiBusy = false;
 	let aiController: AbortController | undefined;
+	let aiMode: 'ask' | 'agent' = 'ask';
+	let aiSteps: AgentStep[] = [];
+	let aiAgentText = '';
+	let aiAutoApprove = false;
+	let aiPendingApproval: {
+		description: string;
+		preview: string;
+		resolve: (approved: boolean) => void;
+	} | null = null;
 
 	$: aiHasApiKey = Boolean(aiSettings.apiKey);
 
@@ -253,6 +265,9 @@
 		documentTitle = document.title;
 		title = formatPageTitle(document.title);
 		setStoredCurrentDocumentId(document.id);
+		// Positions captured for the AI panel belong to the document being left,
+		// so they must not be reused against the incoming one.
+		clearAiSelection();
 
 		if (editor) {
 			editor.commands.setContent(document.content, false);
@@ -418,10 +433,21 @@
 		captureSelection();
 		aiError = '';
 		aiBusy = false;
+		aiSteps = [];
+		aiAgentText = '';
+		aiPendingApproval = null;
 		aiOpen = true;
 	}
 
 	function closeAiPanel() {
+		// The panel is the only place a run is visible or answerable, so a closed
+		// panel must never leave one alive: reopening resets the panel state, which
+		// would otherwise orphan the request (hidden mutations, or an approval
+		// promise nothing can resolve).
+		if (aiBusy || aiPendingApproval) {
+			cancelAiRequest();
+		}
+
 		aiOpen = false;
 	}
 
@@ -481,6 +507,9 @@
 	}
 
 	function cancelAiRequest() {
+		// Deny any waiting approval first so the agent loop stops instead of
+		// hanging on a promise that will never resolve.
+		denyPendingApproval();
 		aiController?.abort();
 		aiBusy = false;
 	}
@@ -500,6 +529,159 @@
 
 		aiResult = '';
 		clearAiSelection();
+	}
+
+	/**
+	 * Clamp a stored position to the live document: the agent can switch
+	 * documents mid-run (e.g. after `create_document`), which invalidates the
+	 * range captured when the panel opened.
+	 */
+	function clampToDocument(position: number) {
+		return Math.min(Math.max(position, 0), editor.state.doc.content.size);
+	}
+
+	/**
+	 * Wire the AI tools to this editor instance. Edits to the open document go
+	 * through editor commands so they land in Tiptap history (and in Yjs while
+	 * sharing); only other documents are written straight to IndexedDB.
+	 */
+	function createAiToolExecutor() {
+		return createDocumentToolExecutor({
+			store: { listDocuments, getDocument, createDocument, updateDocument },
+			editor: {
+				getText: () =>
+					editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n\n', '\n').trim(),
+				hasSelection: () => Boolean(aiSelectionRange) || !editor.state.selection.empty,
+				insertAtCursor: (nodes) => {
+					const at = clampToDocument(aiSelectionRange?.to ?? editor.state.selection.to);
+
+					editor.chain().focus().insertContentAt(at, nodes).run();
+				},
+				replaceSelection: (nodes) => {
+					const range = aiSelectionRange
+						? {
+								from: clampToDocument(aiSelectionRange.from),
+								to: clampToDocument(aiSelectionRange.to)
+							}
+						: { from: editor.state.selection.from, to: editor.state.selection.to };
+
+					editor.chain().focus().insertContentAt(range, nodes).run();
+					clearAiSelection();
+				},
+				setContent: (nodes) => {
+					// `setContent` defaults to emitUpdate: false, which would skip the
+					// autosave and leave the replacement unpersisted.
+					editor.commands.setContent(
+						{
+							type: 'doc',
+							content: nodes.length > 0 ? nodes : [{ type: 'paragraph' }]
+						},
+						true
+					);
+					clearAiSelection();
+				},
+				appendContent: (nodes) => {
+					editor.chain().focus().insertContentAt(editor.state.doc.content.size, nodes).run();
+				},
+				setTitle: (newTitle) => {
+					documentTitle = newTitle;
+					title = formatPageTitle(newTitle);
+					scheduleCurrentDocumentSave(true);
+				}
+			},
+			getCurrentDocumentId: () => currentDocument?.id ?? null,
+			getCurrentDocumentTitle: () => documentTitle,
+			isSharingMode,
+			onStoreChanged: refreshDocuments,
+			openDocument: async (document) => {
+				await flushCurrentDocument();
+				setActiveDocument(document);
+			}
+		});
+	}
+
+	function requestAiApproval({ description, invocation }: ApprovalRequest) {
+		if (aiAutoApprove) {
+			return Promise.resolve(true);
+		}
+
+		return new Promise<boolean>((resolve) => {
+			aiPendingApproval = {
+				description,
+				preview: toolCallPreview(invocation),
+				resolve: (approved) => {
+					aiPendingApproval = null;
+					resolve(approved);
+				}
+			};
+		});
+	}
+
+	function handleAgentEvent(event: AgentEvent) {
+		if (event.type === 'step') {
+			aiSteps = [...aiSteps, event.step];
+		} else if (event.type === 'assistant-text') {
+			aiAgentText = event.text;
+		}
+	}
+
+	function resolveAiApproval(approved: boolean) {
+		aiPendingApproval?.resolve(approved);
+	}
+
+	function denyPendingApproval() {
+		resolveAiApproval(false);
+	}
+
+	async function runAiAgentTask() {
+		const check = checkAiRequest({
+			action: 'prompt',
+			hasApiKey: Boolean(aiSettings.apiKey),
+			selection: aiSelection,
+			prompt: aiPrompt
+		});
+
+		if (check.status !== 'ready') {
+			aiError = check.message;
+			return;
+		}
+
+		aiBusy = true;
+		aiError = '';
+		aiResult = '';
+		aiSteps = [];
+		aiAgentText = '';
+		aiPendingApproval = null;
+		aiController = new AbortController();
+
+		try {
+			const run = await runAgent(aiPrompt, {
+				settings: aiSettings,
+				executeTool: createAiToolExecutor(),
+				requestApproval: requestAiApproval,
+				onEvent: handleAgentEvent,
+				isSharingMode,
+				selection: aiSelection,
+				context: getContextBeforeCursor(),
+				signal: aiController.signal
+			});
+
+			aiAgentText = run.text;
+
+			if (run.stopReason === 'max-steps') {
+				aiError = 'The agent stopped after reaching its step limit. Ask again to continue.';
+			}
+		} catch (error) {
+			if ((error as Error)?.name === 'AbortError') {
+				return;
+			}
+
+			aiError = error instanceof Error ? error.message : 'AI request failed';
+		} finally {
+			denyPendingApproval();
+			aiBusy = false;
+			aiController = undefined;
+		}
 	}
 
 	function insertResultAtCursor() {
@@ -1205,7 +1387,7 @@
 	{/if}
 </div>
 
-<div bind:this={element} />
+<div class="editor-shell" class:ai-panel-open={aiOpen} bind:this={element} />
 
 <AiSettingsDialog
 	bind:open={aiSettingsOpen}
@@ -1270,10 +1452,17 @@
 		result={aiResult}
 		error={aiError}
 		busy={aiBusy}
+		bind:mode={aiMode}
+		steps={aiSteps}
+		agentText={aiAgentText}
+		bind:autoApprove={aiAutoApprove}
+		pendingApproval={aiPendingApproval}
 		onOpen={openAiPanel}
 		onClose={closeAiPanel}
 		onSaveKey={saveAiKeyFromPanel}
 		onAction={runAiAction}
+		onRunAgent={runAiAgentTask}
+		onApproval={resolveAiApproval}
 		onCancel={cancelAiRequest}
 		onReplaceSelection={replaceSelectionWithResult}
 		onInsertAtCursor={insertResultAtCursor}

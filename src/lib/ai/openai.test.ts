@@ -7,8 +7,10 @@ import {
 	OPENAI_ENDPOINT,
 	OPENAI_MODEL_OPTIONS,
 	OPENAI_SETTINGS_KEY,
+	parseAssistantMessage,
 	parseCompletion,
 	readOpenAiSettings,
+	requestChatMessage,
 	resolveModelOptions,
 	stripWrapping,
 	toEditorHtml,
@@ -207,6 +209,167 @@ describe('createChatCompletion', () => {
 				fetchImpl
 			})
 		).rejects.toThrow('OpenAI request failed (401): Invalid key');
+	});
+});
+
+describe('requestChatMessage', () => {
+	it('returns tool calls even when the content is null', async () => {
+		const fetchImpl = vi.fn(async () => ({
+			ok: true,
+			json: async () => ({
+				choices: [
+					{
+						message: {
+							content: null,
+							tool_calls: [
+								{
+									id: 'call_1',
+									type: 'function',
+									function: { name: 'list_documents', arguments: '{}' }
+								}
+							]
+						}
+					}
+				]
+			})
+		})) as unknown as typeof fetch;
+
+		const message = await requestChatMessage({
+			apiKey: 'sk-key',
+			model: 'gpt-5.6-luna',
+			messages: [{ role: 'user', content: 'what do I have?' }],
+			tools: [
+				{
+					type: 'function',
+					function: { name: 'list_documents', description: 'list', parameters: { type: 'object' } }
+				}
+			],
+			fetchImpl
+		});
+
+		expect(message).toEqual({
+			role: 'assistant',
+			// A null content becomes an empty string so the message can be echoed
+			// back into the follow-up request unchanged.
+			content: '',
+			tool_calls: [
+				{ id: 'call_1', type: 'function', function: { name: 'list_documents', arguments: '{}' } }
+			]
+		});
+
+		const body = JSON.parse(
+			(fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string
+		);
+		expect(body.tools).toHaveLength(1);
+	});
+
+	it('omits the tools field when no tools are passed', async () => {
+		const fetchImpl = vi.fn(async () => ({
+			ok: true,
+			json: async () => ({ choices: [{ message: { content: 'plain' } }] })
+		})) as unknown as typeof fetch;
+
+		await requestChatMessage({
+			apiKey: 'sk-key',
+			model: 'gpt-5.6-luna',
+			messages: [],
+			tools: [],
+			fetchImpl
+		});
+
+		const body = JSON.parse(
+			(fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string
+		);
+		expect(body).toEqual({ model: 'gpt-5.6-luna', messages: [] });
+	});
+
+	it('drops tool calls with non-string arguments instead of defaulting them', () => {
+		// Defaulting to "{}" would turn a malformed call into a valid request (e.g.
+		// read_document on the current document); dropping it keeps the echoed
+		// assistant message free of a tool_call that needs a paired result.
+		expect(
+			parseAssistantMessage({
+				choices: [
+					{
+						message: {
+							content: 'hi',
+							tool_calls: [
+								{
+									id: 'c1',
+									type: 'function',
+									function: { name: 'read_document', arguments: { id: 1 } }
+								}
+							]
+						}
+					}
+				]
+			})
+		).toEqual({ role: 'assistant', content: 'hi' });
+	});
+
+	it('keeps only the first of duplicate tool call ids', () => {
+		const message = parseAssistantMessage({
+			choices: [
+				{
+					message: {
+						content: null,
+						tool_calls: [
+							{
+								id: 'dup',
+								type: 'function',
+								function: { name: 'list_documents', arguments: '{}' }
+							},
+							{
+								id: 'dup',
+								type: 'function',
+								function: { name: 'read_document', arguments: '{"id":"d1"}' }
+							}
+						]
+					}
+				}
+			]
+		});
+
+		expect(message.tool_calls).toHaveLength(1);
+		expect(message.tool_calls?.[0].function.name).toBe('list_documents');
+	});
+
+	it('drops malformed tool calls and rejects a fully empty message', () => {
+		expect(
+			parseAssistantMessage({
+				choices: [{ message: { content: 'hi', tool_calls: [{ function: { name: 'x' } }] } }]
+			})
+		).toEqual({ role: 'assistant', content: 'hi' });
+
+		expect(() =>
+			parseAssistantMessage({ choices: [{ message: { content: null, tool_calls: [] } }] })
+		).toThrow('empty response');
+	});
+
+	it('still throws from createChatCompletion when only tool calls come back', async () => {
+		const fetchImpl = vi.fn(async () => ({
+			ok: true,
+			json: async () => ({
+				choices: [
+					{
+						message: {
+							content: null,
+							tool_calls: [
+								{
+									id: 'call_1',
+									type: 'function',
+									function: { name: 'list_documents', arguments: '{}' }
+								}
+							]
+						}
+					}
+				]
+			})
+		})) as unknown as typeof fetch;
+
+		await expect(
+			createChatCompletion({ apiKey: 'sk-key', model: 'gpt-5.6-luna', messages: [], fetchImpl })
+		).rejects.toThrow('empty response');
 	});
 });
 

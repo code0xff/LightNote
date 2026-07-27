@@ -23,9 +23,42 @@ export type OpenAiSettings = {
 
 export type AiAction = 'rewrite' | 'summarize' | 'proofread' | 'continue' | 'prompt';
 
-export type ChatMessage = {
-	role: 'system' | 'user';
+export type SystemMessage = { role: 'system'; content: string };
+
+export type UserMessage = { role: 'user'; content: string };
+
+/** Messages the app writes to start a turn (never carries tool calls). */
+export type PromptMessage = SystemMessage | UserMessage;
+
+/** A tool call as it appears on the wire. `arguments` is an unparsed JSON string. */
+export type ToolCall = {
+	id: string;
+	type: 'function';
+	function: { name: string; arguments: string };
+};
+
+export type AssistantMessage = {
+	role: 'assistant';
 	content: string;
+	tool_calls?: ToolCall[];
+};
+
+export type ToolResultMessage = {
+	role: 'tool';
+	tool_call_id: string;
+	content: string;
+};
+
+export type ChatMessage = PromptMessage | AssistantMessage | ToolResultMessage;
+
+/** An OpenAI function-tool declaration sent in the `tools` request field. */
+export type ToolDefinition = {
+	type: 'function';
+	function: {
+		name: string;
+		description: string;
+		parameters: Record<string, unknown>;
+	};
 };
 
 export type GenerateInput = {
@@ -82,7 +115,7 @@ export function resolveModelOptions(current: string): string[] {
 const SHARED_RULES =
 	'Respond in the same language as the input. Return only the resulting text with no explanations, preamble, or surrounding quotation marks, and do not wrap the answer in code fences.';
 
-export function buildMessages(action: AiAction, input: GenerateInput = {}): ChatMessage[] {
+export function buildMessages(action: AiAction, input: GenerateInput = {}): PromptMessage[] {
 	const selection = input.selection?.trim() ?? '';
 	const context = input.context?.trim() ?? '';
 	const instruction = input.instruction?.trim() ?? '';
@@ -177,15 +210,74 @@ export function stripWrapping(text: string): string {
 	return result;
 }
 
-export function parseCompletion(data: unknown): string {
-	const content = (data as { choices?: Array<{ message?: { content?: unknown } }> })?.choices?.[0]
-		?.message?.content;
+/**
+ * Keeps only well-formed tool calls with unique ids. Malformed entries are
+ * dropped rather than repaired: the caller echoes this normalized message back
+ * to the API, so a dropped call leaves no `tool_call` needing a paired result,
+ * and a duplicate id can never produce two results claiming the same id.
+ */
+function normalizeToolCalls(value: unknown): ToolCall[] {
+	if (!Array.isArray(value)) {
+		return [];
+	}
 
-	if (typeof content !== 'string' || !content.trim()) {
+	const seenIds = new Set<string>();
+
+	return value.flatMap((entry) => {
+		const call = entry as { id?: unknown; function?: { name?: unknown; arguments?: unknown } };
+
+		if (
+			typeof call?.id !== 'string' ||
+			!call.id ||
+			typeof call.function?.name !== 'string' ||
+			typeof call.function.arguments !== 'string' ||
+			seenIds.has(call.id)
+		) {
+			return [];
+		}
+
+		seenIds.add(call.id);
+
+		return [
+			{
+				id: call.id,
+				type: 'function' as const,
+				function: { name: call.function.name, arguments: call.function.arguments }
+			}
+		];
+	});
+}
+
+/**
+ * Reads the assistant message out of a completion response. Unlike
+ * `parseCompletion` this tolerates empty content when tool calls are present,
+ * which is the normal shape of a tool-calling turn.
+ */
+export function parseAssistantMessage(data: unknown): AssistantMessage {
+	const message = (
+		data as { choices?: Array<{ message?: { content?: unknown; tool_calls?: unknown } }> }
+	)?.choices?.[0]?.message;
+
+	const content = typeof message?.content === 'string' ? message.content : '';
+	const toolCalls = normalizeToolCalls(message?.tool_calls);
+
+	if (!content.trim() && toolCalls.length === 0) {
 		throw new Error('OpenAI returned an empty response');
 	}
 
-	return stripWrapping(content);
+	return toolCalls.length > 0
+		? { role: 'assistant', content, tool_calls: toolCalls }
+		: { role: 'assistant', content };
+}
+
+export function parseCompletion(data: unknown): string {
+	const message = parseAssistantMessage(data);
+
+	if (!message.content.trim()) {
+		throw new Error('OpenAI returned an empty response');
+	}
+
+	return stripWrapping(message.content);
 }
 
 export function toEditorHtml(text: string): string {
@@ -231,17 +323,25 @@ export type CompletionParams = {
 	apiKey: string;
 	model: string;
 	messages: ChatMessage[];
+	/** Omitted from the request body when empty, keeping plain calls unchanged. */
+	tools?: ToolDefinition[];
 	signal?: AbortSignal;
 	fetchImpl?: typeof fetch;
 };
 
-export async function createChatCompletion({
+/**
+ * Single chat-completion round trip returning the raw assistant message, so
+ * callers can act on `tool_calls` as well as text. `temperature` is
+ * intentionally not sent (current GPT-5 models reject non-default values).
+ */
+export async function requestChatMessage({
 	apiKey,
 	model,
 	messages,
+	tools,
 	signal,
 	fetchImpl = fetch
-}: CompletionParams): Promise<string> {
+}: CompletionParams): Promise<AssistantMessage> {
 	const key = apiKey.trim();
 
 	if (!key) {
@@ -256,7 +356,8 @@ export async function createChatCompletion({
 		},
 		body: JSON.stringify({
 			model,
-			messages
+			messages,
+			...(tools && tools.length > 0 ? { tools } : {})
 		}),
 		signal
 	});
@@ -265,7 +366,17 @@ export async function createChatCompletion({
 		throw new Error(await extractErrorMessage(response));
 	}
 
-	return parseCompletion(await response.json());
+	return parseAssistantMessage(await response.json());
+}
+
+export async function createChatCompletion(params: CompletionParams): Promise<string> {
+	const message = await requestChatMessage(params);
+
+	if (!message.content.trim()) {
+		throw new Error('OpenAI returned an empty response');
+	}
+
+	return stripWrapping(message.content);
 }
 
 export type GenerateOptions = GenerateInput & {
