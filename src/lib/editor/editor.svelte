@@ -81,6 +81,17 @@
 	import { runAgent, type AgentEvent, type AgentStep, type ApprovalRequest } from '$lib/ai/agent';
 	import { createDocumentToolExecutor } from '$lib/ai/documentTools';
 	import { toolCallPreview } from '$lib/ai/tools';
+	import {
+		appendAiHistory,
+		buildHistoryEntry,
+		clearAiHistory,
+		deleteAiHistoryEntry,
+		documentHistoryKey,
+		listAiHistory,
+		sharedHistoryKey,
+		type AiHistoryEntry,
+		type AiHistoryInput
+	} from '$lib/ai/historyStore';
 	import AiSettingsDialog from './AiSettingsDialog.svelte';
 	import AiPromptPanel from './AiPromptPanel.svelte';
 	import ToolbarButton from './ToolbarButton.svelte';
@@ -130,7 +141,6 @@
 	let aiSelection = '';
 	let aiSelectionRange: { from: number; to: number } | null = null;
 	let aiPrompt = '';
-	let aiResult = '';
 	let aiError = '';
 	let aiBusy = false;
 	let aiController: AbortController | undefined;
@@ -143,6 +153,14 @@
 		preview: string;
 		resolve: (approved: boolean) => void;
 	} | null = null;
+	let aiHistory: AiHistoryEntry[] = [];
+	/**
+	 * Identifies the in-flight request. Cancelling starts a new id so a superseded
+	 * run can no longer touch shared panel state (busy flag, controller, steps).
+	 */
+	let aiRunId = 0;
+	/** Documents deleted this session: their history must not be recreated. */
+	const deletedHistoryKeys = new Set<string>();
 
 	$: aiHasApiKey = Boolean(aiSettings.apiKey);
 
@@ -268,6 +286,7 @@
 		// Positions captured for the AI panel belong to the document being left,
 		// so they must not be reused against the incoming one.
 		clearAiSelection();
+		void loadAiHistory();
 
 		if (editor) {
 			editor.commands.setContent(document.content, false);
@@ -323,6 +342,10 @@
 			const deletingCurrentDocument = currentDocument?.id === documentToDelete.id;
 
 			await deleteDocument(documentToDelete.id);
+			// Otherwise the AI history would outlive the document it belongs to — and
+			// the guard keeps an in-flight run from writing the history back.
+			deletedHistoryKeys.add(documentHistoryKey(documentToDelete.id));
+			await clearAiHistory(documentHistoryKey(documentToDelete.id));
 
 			let remainingDocuments = await listDocuments();
 			if (remainingDocuments.length === 0) {
@@ -416,6 +439,99 @@
 		aiSelectionRange = null;
 	}
 
+	/**
+	 * History is scoped per document, and shared sessions have no local document
+	 * row, so they are keyed by the relay target instead.
+	 */
+	function currentHistoryKey() {
+		if (isSharingMode) {
+			return _endpoint && _workspace
+				? sharedHistoryKey({ endpoint: _endpoint, workspace: _workspace })
+				: null;
+		}
+
+		return currentDocument ? documentHistoryKey(currentDocument.id) : null;
+	}
+
+	async function loadAiHistory() {
+		const key = currentHistoryKey();
+
+		if (!key) {
+			aiHistory = [];
+			return;
+		}
+
+		try {
+			const entries = await listAiHistory(key);
+
+			// Switching documents while a load is in flight must not let the slower
+			// read overwrite the newer document's history.
+			if (key === currentHistoryKey()) {
+				aiHistory = entries;
+			}
+		} catch (error) {
+			// History is auxiliary: a read failure must not block editing.
+			if (key === currentHistoryKey()) {
+				aiHistory = [];
+			}
+
+			console.error(error);
+		}
+	}
+
+	/**
+	 * Persists one entry against the document the request started from, then shows
+	 * the stored list (never a locally appended copy, which would keep entries
+	 * that pruning removed).
+	 */
+	async function saveAiHistory(
+		documentKey: string | null,
+		input: Omit<AiHistoryInput, 'documentKey'>
+	) {
+		if (!documentKey || deletedHistoryKeys.has(documentKey)) {
+			return;
+		}
+
+		try {
+			const { entries } = await appendAiHistory({ ...input, documentKey });
+
+			if (documentKey === currentHistoryKey()) {
+				aiHistory = entries;
+			}
+		} catch (error) {
+			console.error(error);
+
+			// Keep the response visible and applicable even when storing it failed.
+			if (documentKey === currentHistoryKey()) {
+				aiHistory = [...aiHistory, buildHistoryEntry({ ...input, documentKey })];
+			}
+		}
+	}
+
+	async function deleteAiHistoryItem(id: string) {
+		try {
+			await deleteAiHistoryEntry(id);
+			aiHistory = aiHistory.filter((entry) => entry.id !== id);
+		} catch (error) {
+			console.error(error);
+		}
+	}
+
+	async function clearAiHistoryForDocument() {
+		const key = currentHistoryKey();
+
+		if (!key || !window.confirm('Clear the AI history for this document?')) {
+			return;
+		}
+
+		try {
+			await clearAiHistory(key);
+			aiHistory = [];
+		} catch (error) {
+			console.error(error);
+		}
+	}
+
 	function getContextBeforeCursor(limit = 4000) {
 		if (!editor) {
 			return '';
@@ -437,6 +553,8 @@
 		aiAgentText = '';
 		aiPendingApproval = null;
 		aiOpen = true;
+		// Cheap insurance: the history may have been pruned or cleared elsewhere.
+		void loadAiHistory();
 	}
 
 	function closeAiPanel() {
@@ -480,30 +598,72 @@
 			return;
 		}
 
-		aiBusy = true;
-		aiError = '';
-		aiResult = '';
-		aiController = new AbortController();
+		const runId = startAiRun();
+		const prompt = aiPrompt;
+		const selection = aiSelection;
+		// The response belongs to the document the request started from, even if
+		// the user switches documents while it is in flight.
+		const startedFrom = currentHistoryKey();
 
 		try {
-			aiResult = await generateText({
+			const response = await generateText({
 				action,
 				settings: aiSettings,
-				selection: aiSelection,
+				selection,
 				context: getContextBeforeCursor(),
-				instruction: aiPrompt,
-				signal: aiController.signal
+				instruction: prompt,
+				signal: aiController?.signal
 			});
+
+			await saveAiHistory(startedFrom, { mode: 'ask', action, prompt, selection, response });
 		} catch (error) {
 			if ((error as Error)?.name === 'AbortError') {
 				return;
 			}
 
-			aiError = error instanceof Error ? error.message : 'AI request failed';
+			const message = error instanceof Error ? error.message : 'AI request failed';
+
+			if (isCurrentAiRun(runId)) {
+				aiError = message;
+			}
+
+			await saveAiHistory(startedFrom, {
+				mode: 'ask',
+				action,
+				prompt,
+				selection,
+				response: '',
+				error: message
+			});
 		} finally {
-			aiBusy = false;
-			aiController = undefined;
+			finishAiRun(runId);
 		}
+	}
+
+	function startAiRun() {
+		aiRunId += 1;
+		aiBusy = true;
+		aiError = '';
+		aiController = new AbortController();
+
+		return aiRunId;
+	}
+
+	function isCurrentAiRun(runId: number) {
+		return runId === aiRunId;
+	}
+
+	/**
+	 * Only the current run may clear the shared busy/controller state: a cancelled
+	 * run settling later must not reset the state of the run that replaced it.
+	 */
+	function finishAiRun(runId: number) {
+		if (!isCurrentAiRun(runId)) {
+			return;
+		}
+
+		aiBusy = false;
+		aiController = undefined;
 	}
 
 	function cancelAiRequest() {
@@ -511,15 +671,18 @@
 		// hanging on a promise that will never resolve.
 		denyPendingApproval();
 		aiController?.abort();
+		// Retire the id so the abandoned run cannot touch panel state as it unwinds.
+		aiRunId += 1;
 		aiBusy = false;
+		aiController = undefined;
 	}
 
-	function replaceSelectionWithResult() {
-		if (!editor || !aiResult) {
+	function replaceSelectionWithResult(text: string) {
+		if (!editor || !text) {
 			return;
 		}
 
-		const html = toEditorHtml(aiResult);
+		const html = toEditorHtml(text);
 
 		if (aiSelectionRange) {
 			editor.chain().focus().insertContentAt(aiSelectionRange, html).run();
@@ -527,7 +690,6 @@
 			editor.chain().focus().insertContent(html).run();
 		}
 
-		aiResult = '';
 		clearAiSelection();
 	}
 
@@ -646,53 +808,96 @@
 			return;
 		}
 
-		aiBusy = true;
-		aiError = '';
-		aiResult = '';
 		aiSteps = [];
 		aiAgentText = '';
 		aiPendingApproval = null;
-		aiController = new AbortController();
+
+		const runId = startAiRun();
+		const prompt = aiPrompt;
+		const selection = aiSelection;
+		// The document can change mid-run (create_document opens the new one), so
+		// the entry is written against the document the run started from.
+		const startedFrom = currentHistoryKey();
+		// Steps are collected locally as well: a superseded run must record what it
+		// actually did, not whatever the live panel state holds by then.
+		const runSteps: AgentStep[] = [];
+		let runText = '';
+		let runError = '';
 
 		try {
-			const run = await runAgent(aiPrompt, {
+			const run = await runAgent(prompt, {
 				settings: aiSettings,
 				executeTool: createAiToolExecutor(),
 				requestApproval: requestAiApproval,
-				onEvent: handleAgentEvent,
+				onEvent: (event) => {
+					if (event.type === 'step') {
+						runSteps.push(event.step);
+					} else if (event.type === 'assistant-text') {
+						runText = event.text;
+					}
+
+					if (isCurrentAiRun(runId)) {
+						handleAgentEvent(event);
+					}
+				},
 				isSharingMode,
-				selection: aiSelection,
+				selection,
 				context: getContextBeforeCursor(),
-				signal: aiController.signal
+				signal: aiController?.signal
 			});
 
-			aiAgentText = run.text;
+			runText = run.text;
 
 			if (run.stopReason === 'max-steps') {
-				aiError = 'The agent stopped after reaching its step limit. Ask again to continue.';
+				runError = 'The agent stopped after reaching its step limit. Ask again to continue.';
 			}
 		} catch (error) {
-			if ((error as Error)?.name === 'AbortError') {
-				return;
-			}
+			runError = (error as Error)?.name === 'AbortError' ? 'Cancelled.' : '';
 
-			aiError = error instanceof Error ? error.message : 'AI request failed';
+			if (!runError) {
+				runError = error instanceof Error ? error.message : 'AI request failed';
+			}
 		} finally {
 			denyPendingApproval();
-			aiBusy = false;
-			aiController = undefined;
+			finishAiRun(runId);
+		}
+
+		if (isCurrentAiRun(runId)) {
+			aiAgentText = runText;
+			// The run is now recorded below, so drop the live copy of it.
+			aiSteps = [];
+
+			if (runError && runError !== 'Cancelled.') {
+				aiError = runError;
+			}
+		}
+
+		await saveAiHistory(startedFrom, {
+			mode: 'agent',
+			prompt,
+			selection,
+			response: runText,
+			steps: runSteps.map((step) => ({
+				description: step.description,
+				status: step.status,
+				...(step.result.ok ? {} : { error: step.result.error })
+			})),
+			...(runError ? { error: runError } : {})
+		});
+
+		if (isCurrentAiRun(runId)) {
+			aiAgentText = '';
 		}
 	}
 
-	function insertResultAtCursor() {
-		if (!editor || !aiResult) {
+	function insertResultAtCursor(text: string) {
+		if (!editor || !text) {
 			return;
 		}
 
 		const at = aiSelectionRange ? aiSelectionRange.to : editor.state.selection.to;
 
-		editor.chain().focus().insertContentAt(at, toEditorHtml(aiResult)).run();
-		aiResult = '';
+		editor.chain().focus().insertContentAt(at, toEditorHtml(text)).run();
 		clearAiSelection();
 	}
 
@@ -1070,6 +1275,7 @@
 					sharedDocuments = upsertSharedDocumentHistory({ endpoint, workspace });
 
 					extensions = await getExtensionsOnSharing(provider, bubbleMenu);
+					await loadAiHistory();
 				} catch (error) {
 					const message = error instanceof Error ? error.message : 'Unknown error';
 
@@ -1094,6 +1300,7 @@
 					content = currentDocument.content;
 					title = formatPageTitle(currentDocument.title);
 					documents = await listDocuments();
+					await loadAiHistory();
 				} catch (error) {
 					window.alert(error instanceof Error ? error.message : 'Failed to load documents');
 					console.error(error);
@@ -1449,7 +1656,6 @@
 		bind:apiKey={aiApiKeyInput}
 		selection={aiSelection}
 		bind:prompt={aiPrompt}
-		result={aiResult}
 		error={aiError}
 		busy={aiBusy}
 		bind:mode={aiMode}
@@ -1457,6 +1663,7 @@
 		agentText={aiAgentText}
 		bind:autoApprove={aiAutoApprove}
 		pendingApproval={aiPendingApproval}
+		history={aiHistory}
 		onOpen={openAiPanel}
 		onClose={closeAiPanel}
 		onSaveKey={saveAiKeyFromPanel}
@@ -1468,5 +1675,7 @@
 		onInsertAtCursor={insertResultAtCursor}
 		onClearSelection={clearAiSelection}
 		onOpenSettings={openAiSettings}
+		onDeleteHistoryEntry={deleteAiHistoryItem}
+		onClearHistory={clearAiHistoryForDocument}
 	/>
 {/if}

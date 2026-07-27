@@ -5,9 +5,17 @@ export const CURRENT_DOCUMENT_ID_KEY = 'currentDocumentId';
 export const LEGACY_AUTO_SAVE_KEY = 'auto_saved';
 
 const DB_NAME = 'light-note';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const DOCUMENT_STORE = 'documents';
 const UNTITLED_TITLE = 'Untitled';
+
+/**
+ * AI conversation history, scoped per document. Lives in the same database so
+ * one place owns the schema version; the records themselves are managed by
+ * `$lib/ai/historyStore`.
+ */
+export const AI_HISTORY_STORE = 'aiHistory';
+export const AI_HISTORY_DOCUMENT_INDEX = 'documentKey';
 
 export type LightNoteDocument = {
 	id: string;
@@ -77,19 +85,30 @@ function openDatabase(factory?: IDBFactory) {
 
 			store.createIndex('updatedAt', 'updatedAt');
 		}
+
+		if (!db.objectStoreNames.contains(AI_HISTORY_STORE)) {
+			const store = db.createObjectStore(AI_HISTORY_STORE, { keyPath: 'id' });
+
+			store.createIndex(AI_HISTORY_DOCUMENT_INDEX, 'documentKey');
+		}
 	};
 
 	return requestToPromise(request);
 }
 
-async function withStore<T>(
+/**
+ * Runs one request against a named object store. Exported so the AI history
+ * module can reuse this database without opening it at a second version.
+ */
+export async function withStore<T>(
+	storeName: string,
 	mode: IDBTransactionMode,
 	run: (store: IDBObjectStore) => IDBRequest<T>,
 	factory?: IDBFactory
 ): Promise<T> {
 	const db = await openDatabase(factory);
-	const transaction = db.transaction(DOCUMENT_STORE, mode);
-	const store = transaction.objectStore(DOCUMENT_STORE);
+	const transaction = db.transaction(storeName, mode);
+	const store = transaction.objectStore(storeName);
 
 	try {
 		const result = await requestToPromise(run(store));
@@ -141,6 +160,7 @@ export function setStoredCurrentDocumentId(id: string, storage: Storage = localS
 
 export async function listDocuments(factory?: IDBFactory) {
 	const documents = await withStore<LegacyLightNoteDocument[]>(
+		DOCUMENT_STORE,
 		'readonly',
 		(store) => store.getAll(),
 		factory
@@ -151,6 +171,7 @@ export async function listDocuments(factory?: IDBFactory) {
 
 export async function getDocument(id: string, factory?: IDBFactory) {
 	const document = await withStore<LegacyLightNoteDocument | undefined>(
+		DOCUMENT_STORE,
 		'readonly',
 		(store) => store.get(id),
 		factory
@@ -171,7 +192,7 @@ export async function createDocument(input: CreateDocumentInput = {}, factory?: 
 		sourceFileName: input.sourceFileName
 	};
 
-	await withStore('readwrite', (store) => store.add(document), factory);
+	await withStore(DOCUMENT_STORE, 'readwrite', (store) => store.add(document), factory);
 
 	return document;
 }
@@ -222,7 +243,7 @@ export async function updateDocument(id: string, input: UpdateDocumentInput, fac
 }
 
 export async function deleteDocument(id: string, factory?: IDBFactory) {
-	await withStore('readwrite', (store) => store.delete(id), factory);
+	await withStore(DOCUMENT_STORE, 'readwrite', (store) => store.delete(id), factory);
 }
 
 export async function migrateLegacyAutoSave(storage: Storage = localStorage, factory?: IDBFactory) {

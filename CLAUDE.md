@@ -59,7 +59,7 @@ Each has a colocated `*.test.ts`. Storage-touching functions take an injectable 
 
 ### Persistence model
 
-- **Documents** live in IndexedDB (`store.ts`): DB `light-note`, version 2, object store `documents`. `normalizeDocument` migrates older records (e.g. an `html` field, missing `contentFormat`) into the current `LightNoteDocument` shape on read, so the store tolerates legacy data. `ensureInitialDocument` also migrates a legacy single-doc `auto_saved` localStorage blob into a real document on first load.
+- **Documents** live in IndexedDB (`store.ts`): DB `light-note`, version 3, object stores `documents` and `aiHistory`. `store.ts` owns the schema (so the DB is never opened at two versions) and exports `withStore(storeName, ...)`; the `aiHistory` records themselves are managed by `ai/historyStore.ts`. `normalizeDocument` migrates older records (e.g. an `html` field, missing `contentFormat`) into the current `LightNoteDocument` shape on read, so the store tolerates legacy data. `ensureInitialDocument` also migrates a legacy single-doc `auto_saved` localStorage blob into a real document on first load.
 - **App state** lives in `localStorage`. Keys in use: `currentDocumentId`, `edited` (last export filename), `shared`/`connected`/`sharedDocuments` (collaboration), `openai` (AI settings), and legacy `auto_saved`.
 - Saves are **debounced (500ms) and serialized** through a promise chain (`saveQueue`) to avoid overlapping IndexedDB writes.
 
@@ -76,6 +76,18 @@ The AI panel has two modes: **Ask** (the one-shot actions above) and **Agent**, 
 - `ai/agent.ts` — `runAgent(instruction, deps)` drives the loop with everything injected (`executeTool`, `requestApproval`, `onEvent`, `fetchImpl`). Invariants: **mutating tools never run without approval** (no `requestApproval` ⇒ denied); every `tool_call` always gets a matching `tool` message (even when invalid, denied, or over the per-step cap); the run is bounded by `maxSteps` (8, normalized to a finite whole number) × `MAX_TOOL_CALLS_PER_STEP` (8); and `signal` is re-checked before each call and after each approval so cancelling cannot let a queued mutation through.
 - `ai/markdown.ts` — a small markdown subset (headings, flat lists, quotes, fenced code, bold/italic/inline code, links) parsed into Tiptap nodes so agent output lands as rich content. `blocksToHtml` serializes it back to HTML for appending to legacy HTML documents. Link targets are restricted to http/https/mailto; anything else keeps the label and drops the href.
 - `ai/documentTools.ts` — `createDocumentToolExecutor(deps)` binds the tools to the store and an `EditorBridge` (which receives parsed nodes, not text). **Edits to the open document go through editor commands** (undoable, Yjs-safe); only other documents are written straight to IndexedDB. The open document is _read_ from the editor because store saves are debounced.
+
+### AI history (per document)
+
+`ai/historyStore.ts` persists every Ask result and Agent run in the `aiHistory` object store, scoped by a key: `doc:<id>` for saved documents, `shared:<encoded endpoint>/<encoded workspace>` for collaboration sessions (which have no local document row; both parts are URI-encoded so slashes cannot make two sessions collide). The panel renders that history as a chat-style timeline — there is no separate "latest result" state, and any past Ask entry can still be inserted or used to replace the selection.
+
+Invariants worth keeping:
+
+- `appendAiHistory` prunes to 50 entries per document and **returns the resulting list**; render that, never a locally appended copy, or the UI keeps entries pruning just deleted.
+- Every persisted text field is capped (entry text, error, step descriptions), and both entries and their `steps` are validated element by element on read — a malformed record is skipped rather than handed to the panel.
+- Reads and writes capture the key they started with: `loadAiHistory` discards a result whose document is no longer open, and a request records against the document it started from (the agent can switch documents mid-run).
+- `aiRunId` identifies the in-flight request. Cancelling retires the id, so a superseded run cannot reset `aiBusy`/the controller or overwrite the live step list; its steps are collected locally so it still records what it actually did.
+- Deleting a document clears its history and marks the key, so an in-flight run cannot recreate it.
 
 `editor.svelte` owns the UI state: mode, step timeline, and the approval prompt (a promise resolved by the Approve/Reject buttons). **Closing the panel cancels any in-flight run** — the panel is the only place a run is visible or answerable, and reopening resets that state, so a surviving run would mean hidden mutations or an approval promise nothing can resolve.
 
