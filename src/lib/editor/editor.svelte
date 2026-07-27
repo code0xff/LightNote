@@ -59,6 +59,8 @@
 	} from './editor';
 	import {
 		createDocument,
+		DB_BLOCKED_MESSAGE,
+		DB_OUTDATED_MESSAGE,
 		deleteDocument,
 		ensureInitialDocument,
 		getDocument,
@@ -453,6 +455,28 @@
 		return currentDocument ? documentHistoryKey(currentDocument.id) : null;
 	}
 
+	let databaseNoticeShown = false;
+
+	/**
+	 * History failures are swallowed so they cannot block editing, but a schema
+	 * version problem still has to be said out loud: in sharing mode the history is
+	 * the only IndexedDB read, so otherwise the user would just see an empty
+	 * history and no explanation of why.
+	 */
+	function notifyDatabaseProblem(error: unknown) {
+		const message = error instanceof Error ? error.message : '';
+
+		if (
+			databaseNoticeShown ||
+			(message !== DB_OUTDATED_MESSAGE && message !== DB_BLOCKED_MESSAGE)
+		) {
+			return;
+		}
+
+		databaseNoticeShown = true;
+		window.alert(message);
+	}
+
 	async function loadAiHistory() {
 		const key = currentHistoryKey();
 
@@ -475,6 +499,7 @@
 				aiHistory = [];
 			}
 
+			notifyDatabaseProblem(error);
 			console.error(error);
 		}
 	}
@@ -499,6 +524,7 @@
 				aiHistory = entries;
 			}
 		} catch (error) {
+			notifyDatabaseProblem(error);
 			console.error(error);
 
 			// Keep the response visible and applicable even when storing it failed.

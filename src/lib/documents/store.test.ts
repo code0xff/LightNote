@@ -2,7 +2,11 @@ import { IDBFactory } from 'fake-indexeddb';
 import { describe, expect, it, vi } from 'vitest';
 import {
 	CURRENT_DOCUMENT_ID_KEY,
+	DB_BLOCKED_MESSAGE,
+	DB_OUTDATED_MESSAGE,
 	createDocument,
+	describeOpenError,
+	openRequestToPromise,
 	deleteDocument,
 	ensureInitialDocument,
 	getDocument,
@@ -24,6 +28,101 @@ function memoryStorage(initial: Record<string, string> = {}) {
 		setItem: vi.fn((key: string, value: string) => values.set(key, value))
 	} as unknown as Storage;
 }
+
+/** Minimal stand-in for an open request whose handlers the test fires. */
+function fakeOpenRequest(result?: unknown, error?: { name?: string } | null) {
+	return {
+		onsuccess: null,
+		onerror: null,
+		onblocked: null,
+		result,
+		error
+	} as unknown as IDBOpenDBRequest & {
+		onsuccess: (() => void) | null;
+		onerror: (() => void) | null;
+		onblocked: (() => void) | null;
+	};
+}
+
+describe('opening the database', () => {
+	it('closes its connection when another tab needs to upgrade', async () => {
+		const close = vi.fn();
+		const db = { close } as unknown as IDBDatabase;
+		const request = fakeOpenRequest(db);
+		const promise = openRequestToPromise(request);
+
+		request.onsuccess?.();
+
+		const opened = await promise;
+		expect(opened).toBe(db);
+
+		// Without this, one open tab would block the next version indefinitely.
+		(opened.onversionchange as unknown as () => void)();
+		expect(close).toHaveBeenCalled();
+	});
+
+	it('explains a stale build instead of surfacing VersionError', async () => {
+		const request = fakeOpenRequest(undefined, { name: 'VersionError' });
+		const promise = openRequestToPromise(request);
+
+		request.onerror?.();
+
+		await expect(promise).rejects.toThrow(DB_OUTDATED_MESSAGE);
+		expect(describeOpenError({ name: 'VersionError' }).message).toBe(DB_OUTDATED_MESSAGE);
+		expect(describeOpenError(null).message).toContain('Failed to open');
+		expect(describeOpenError(new Error('boom')).message).toBe('boom');
+	});
+
+	it('tolerates a momentary block but reports one that persists', async () => {
+		vi.useFakeTimers();
+
+		try {
+			// A block that clears before the timeout resolves normally.
+			const db = { close: vi.fn() } as unknown as IDBDatabase;
+			const transient = fakeOpenRequest(db);
+			const resolved = openRequestToPromise(transient, 3000);
+
+			transient.onblocked?.();
+			vi.advanceTimersByTime(1000);
+			transient.onsuccess?.();
+			await expect(resolved).resolves.toBe(db);
+
+			// One that never clears rejects instead of hanging forever.
+			const stuck = fakeOpenRequest();
+			const rejected = openRequestToPromise(stuck, 3000);
+
+			stuck.onblocked?.();
+			// Repeated blocked events must not stack timers.
+			stuck.onblocked?.();
+			vi.advanceTimersByTime(3000);
+
+			await expect(rejected).rejects.toThrow(DB_BLOCKED_MESSAGE);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('closes a connection that arrives after the blocked timeout gave up', async () => {
+		vi.useFakeTimers();
+
+		try {
+			const close = vi.fn();
+			const request = fakeOpenRequest({ close } as unknown as IDBDatabase);
+			const rejected = openRequestToPromise(request, 3000);
+
+			request.onblocked?.();
+			vi.advanceTimersByTime(3000);
+			await expect(rejected).rejects.toThrow(DB_BLOCKED_MESSAGE);
+
+			// The open request stays live; nobody would ever close a late connection,
+			// and leaving it open would block the next upgrade until reload.
+			request.onsuccess?.();
+			expect(close).toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
 
 describe('document store helpers', () => {
 	it('stores and reads the current document id', () => {

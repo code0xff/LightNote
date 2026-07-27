@@ -330,6 +330,14 @@ export type CompletionParams = {
 };
 
 /**
+ * Current GPT-5 models refuse function tools on `/v1/chat/completions` unless
+ * reasoning is switched off: "Function tools with reasoning_effort are not
+ * supported ... set reasoning_effort to 'none'". Only sent alongside `tools`, so
+ * plain Ask requests keep exactly the shape they had before.
+ */
+const TOOL_REASONING_EFFORT = 'none';
+
+/**
  * Single chat-completion round trip returning the raw assistant message, so
  * callers can act on `tool_calls` as well as text. `temperature` is
  * intentionally not sent (current GPT-5 models reject non-default values).
@@ -348,22 +356,40 @@ export async function requestChatMessage({
 		throw new Error('OpenAI API key is not set. Add it in AI settings.');
 	}
 
-	const response = await fetchImpl(OPENAI_ENDPOINT, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${key}`
-		},
-		body: JSON.stringify({
-			model,
-			messages,
-			...(tools && tools.length > 0 ? { tools } : {})
-		}),
-		signal
-	});
+	const hasTools = Boolean(tools && tools.length > 0);
+	const send = (withReasoningEffort: boolean) =>
+		fetchImpl(OPENAI_ENDPOINT, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${key}`
+			},
+			body: JSON.stringify({
+				model,
+				messages,
+				...(hasTools ? { tools } : {}),
+				...(hasTools && withReasoningEffort ? { reasoning_effort: TOOL_REASONING_EFFORT } : {})
+			}),
+			signal
+		});
+
+	let response = await send(true);
 
 	if (!response.ok) {
-		throw new Error(await extractErrorMessage(response));
+		const message = await extractErrorMessage(response);
+
+		// The user can name any model (`resolveModelOptions` allows unknown ones),
+		// and some reject the field itself. Retry once without it rather than
+		// failing a whole agent run over a request-shape difference.
+		if (!hasTools || response.status !== 400 || !/reasoning_effort/i.test(message)) {
+			throw new Error(message);
+		}
+
+		response = await send(false);
+
+		if (!response.ok) {
+			throw new Error(await extractErrorMessage(response));
+		}
 	}
 
 	return parseAssistantMessage(await response.json());

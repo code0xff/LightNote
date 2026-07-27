@@ -263,6 +263,75 @@ describe('requestChatMessage', () => {
 		expect(body.tools).toHaveLength(1);
 	});
 
+	it('disables reasoning when sending tools, and retries without it if rejected', async () => {
+		const bodies: Array<Record<string, unknown>> = [];
+		const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+			bodies.push(JSON.parse(init.body as string));
+
+			if (bodies.length === 1) {
+				return {
+					ok: false,
+					status: 400,
+					json: async () => ({
+						error: { message: 'Unrecognized request argument supplied: reasoning_effort' }
+					})
+				};
+			}
+
+			return { ok: true, json: async () => ({ choices: [{ message: { content: 'done' } }] }) };
+		}) as unknown as typeof fetch;
+
+		const tools = [
+			{
+				type: 'function' as const,
+				function: { name: 'list_documents', description: 'list', parameters: { type: 'object' } }
+			}
+		];
+
+		const message = await requestChatMessage({
+			apiKey: 'sk-key',
+			model: 'gpt-5.6-luna',
+			messages: [],
+			tools,
+			fetchImpl
+		});
+
+		expect(message.content).toBe('done');
+		// First attempt disables reasoning, as the API requires for function tools.
+		expect(bodies[0].reasoning_effort).toBe('none');
+		expect(bodies[1]).not.toHaveProperty('reasoning_effort');
+		expect(bodies[1].tools).toHaveLength(1);
+	});
+
+	it('does not retry a 400 unrelated to reasoning_effort', async () => {
+		const fetchImpl = vi.fn(async () => ({
+			ok: false,
+			status: 400,
+			json: async () => ({ error: { message: 'Invalid schema for function' } })
+		})) as unknown as typeof fetch;
+
+		await expect(
+			requestChatMessage({
+				apiKey: 'sk-key',
+				model: 'gpt-5.6-luna',
+				messages: [],
+				tools: [
+					{
+						type: 'function',
+						function: {
+							name: 'list_documents',
+							description: 'list',
+							parameters: { type: 'object' }
+						}
+					}
+				],
+				fetchImpl
+			})
+		).rejects.toThrow('Invalid schema for function');
+
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+	});
+
 	it('omits the tools field when no tools are passed', async () => {
 		const fetchImpl = vi.fn(async () => ({
 			ok: true,

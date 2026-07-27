@@ -47,6 +47,102 @@ type LegacyLightNoteDocument = Omit<LightNoteDocument, 'content' | 'contentForma
 	html?: string;
 };
 
+/**
+ * Shown when another tab holds an older-version connection: the upgrade cannot
+ * proceed until that connection closes.
+ */
+export const DB_BLOCKED_MESSAGE =
+	'Another LightNote tab is still open on an older version. Close it, then reload this page.';
+
+/**
+ * Shown when this code is older than the stored database — a tab running a
+ * previous build (usually served from the service worker cache) after another
+ * tab already upgraded.
+ */
+export const DB_OUTDATED_MESSAGE =
+	'LightNote has been updated. Reload this page to continue (your notes are safe).';
+
+/** How long to wait for a blocking connection to close before giving up. */
+export const OPEN_BLOCKED_TIMEOUT_MS = 3000;
+
+export function describeOpenError(error: { name?: string } | null): Error {
+	if (error?.name === 'VersionError') {
+		return new Error(DB_OUTDATED_MESSAGE);
+	}
+
+	return error instanceof Error ? error : new Error('Failed to open the LightNote database');
+}
+
+/**
+ * Resolves an open request, adding the two cases a plain request wrapper misses:
+ * `blocked` (which otherwise waits forever with no timeout) and a stale-code
+ * `VersionError`. Also closes this connection when another tab needs to upgrade,
+ * so one open tab cannot block the next version indefinitely.
+ */
+export function openRequestToPromise(
+	request: IDBOpenDBRequest,
+	blockedTimeoutMs = OPEN_BLOCKED_TIMEOUT_MS
+): Promise<IDBDatabase> {
+	return new Promise<IDBDatabase>((resolve, reject) => {
+		let blockedTimer: ReturnType<typeof setTimeout> | undefined;
+		let settled = false;
+
+		const clearBlockedTimer = () => {
+			if (blockedTimer) {
+				clearTimeout(blockedTimer);
+				blockedTimer = undefined;
+			}
+		};
+
+		request.onsuccess = () => {
+			const db = request.result;
+
+			db.onversionchange = () => db.close();
+			clearBlockedTimer();
+
+			// The blocked timeout already rejected, so nobody will ever close this
+			// connection: leaving it open would block the next upgrade until reload.
+			if (settled) {
+				db.close();
+				return;
+			}
+
+			settled = true;
+			resolve(db);
+		};
+
+		request.onerror = () => {
+			clearBlockedTimer();
+
+			if (settled) {
+				return;
+			}
+
+			settled = true;
+			reject(describeOpenError(request.error));
+		};
+
+		// A blocking connection is usually momentary (every operation opens and
+		// closes its own), so wait briefly before surfacing it.
+		request.onblocked = () => {
+			if (blockedTimer || settled) {
+				return;
+			}
+
+			blockedTimer = setTimeout(() => {
+				blockedTimer = undefined;
+
+				if (settled) {
+					return;
+				}
+
+				settled = true;
+				reject(new Error(DB_BLOCKED_MESSAGE));
+			}, blockedTimeoutMs);
+		};
+	});
+}
+
 function requestToPromise<T>(request: IDBRequest<T>) {
 	return new Promise<T>((resolve, reject) => {
 		request.onsuccess = () => resolve(request.result);
@@ -93,7 +189,7 @@ function openDatabase(factory?: IDBFactory) {
 		}
 	};
 
-	return requestToPromise(request);
+	return openRequestToPromise(request);
 }
 
 /**
