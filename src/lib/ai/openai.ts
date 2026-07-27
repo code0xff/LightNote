@@ -126,8 +126,13 @@ export function resolveModelOptions(current: string): string[] {
 	return current && !base.includes(current) ? [current, ...base] : base;
 }
 
+/**
+ * The result of an Ask action is inserted into the document verbatim, so it must
+ * contain document content and nothing else — no preamble, no notes about what
+ * was changed.
+ */
 const SHARED_RULES =
-	'Respond in the same language as the input. Return only the resulting text with no explanations, preamble, or surrounding quotation marks, and do not wrap the answer in code fences.';
+	'Respond in the same language as the input. Return only the document text itself: no explanations, no preamble such as "Here is the revised version", no notes about what you changed or why, no surrounding quotation marks, and no code fences. Everything you return is written straight into the user document.';
 
 export function buildMessages(action: AiAction, input: GenerateInput = {}): PromptMessage[] {
 	const selection = input.selection?.trim() ?? '';

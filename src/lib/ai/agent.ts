@@ -115,6 +115,7 @@ export function buildAgentSystemPrompt(
 		'- For the document the user has open, prefer insert_at_cursor or replace_selection over update_document so the change stays undoable.',
 		'- Never touch a document the user did not ask about, and make the smallest change that satisfies the request.',
 		'- Tool text arguments accept a markdown subset (headings, lists, quotes, fenced code, bold, italic, inline code, links) which is converted to rich content. Avoid tables and nested lists.',
+		'- Tool text is written into the document verbatim, so it must contain document content only. Never put explanations, progress notes, or descriptions of what you changed into a tool argument — those belong in your reply, which the user reads next to the document.',
 		'- Mutating tool calls need the user approval. If one is denied, stop and explain instead of retrying it.',
 		'- When the work is done, reply with one or two short sentences describing what changed. Do not repeat the inserted text.'
 	];

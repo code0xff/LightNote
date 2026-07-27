@@ -157,6 +157,8 @@
 		resolve: (approved: boolean) => void;
 	} | null = null;
 	let aiHistory: AiHistoryEntry[] = [];
+	/** Instruction of the run in flight; the textarea is cleared on send. */
+	let aiRunPrompt = '';
 	/**
 	 * Identifies the in-flight request. Cancelling starts a new id so a superseded
 	 * run can no longer touch shared panel state (busy flag, controller, steps).
@@ -633,6 +635,10 @@
 		const runId = startAiRun();
 		const prompt = aiPrompt;
 		const selection = aiSelection;
+		// The instruction has been taken; the box is free for the next one. The live
+		// entry renders `aiRunPrompt`, and the history entry keeps the text.
+		aiPrompt = '';
+		aiRunPrompt = prompt;
 		// The response belongs to the document the request started from, even if
 		// the user switches documents while it is in flight.
 		const startedFrom = currentHistoryKey();
@@ -855,6 +861,12 @@
 		const runId = startAiRun();
 		const prompt = instruction;
 		const selection = aiSelection;
+
+		if (!priorMessages) {
+			aiPrompt = '';
+		}
+
+		aiRunPrompt = prompt;
 		// The document can change mid-run (create_document opens the new one), so
 		// the entry is written against the document the run started from.
 		const startedFrom = currentHistoryKey();
@@ -1722,6 +1734,7 @@
 		pendingApproval={aiPendingApproval}
 		history={aiHistory}
 		continueReason={aiResume?.reason ?? null}
+		runPrompt={aiRunPrompt}
 		onOpen={openAiPanel}
 		onClose={closeAiPanel}
 		onSaveKey={saveAiKeyFromPanel}

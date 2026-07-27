@@ -83,6 +83,8 @@ describe('prompt building', () => {
 
 		expect(system.role).toBe('system');
 		expect(system.content).toContain('make it formal');
+		// The result is inserted verbatim, so it must carry no commentary.
+		expect(system.content).toContain('no notes about what you changed');
 		expect(user).toEqual({ role: 'user', content: 'the text' });
 	});
 

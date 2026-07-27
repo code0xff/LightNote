@@ -100,6 +100,9 @@ describe('agent prompts', () => {
 		expect(normal).toContain('replace_selection is available');
 		expect(normal).not.toContain('shared collaboration session');
 
+		// Explanations belong in the reply, never in a tool argument.
+		expect(normal).toContain('document content only');
+
 		const sharing = buildAgentSystemPrompt({ isSharingMode: true });
 
 		expect(sharing).toContain('shared collaboration session');

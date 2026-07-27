@@ -33,6 +33,11 @@
 	export let history: AiHistoryEntry[] = [];
 	/** Set when the last run stopped early and can be resumed. */
 	export let continueReason: 'max-steps' | 'stalled' | null = null;
+	/**
+	 * Instruction of the run in flight. The textarea is cleared on send, so the
+	 * live entry cannot read it from `prompt`.
+	 */
+	export let runPrompt = '';
 	export let onOpen: () => void;
 	export let onClose: () => void;
 	export let onSaveKey: () => void;
@@ -298,8 +303,8 @@
 									<span class="text-muted-foreground">now</span>
 								</span>
 
-								{#if prompt.trim()}
-									<p class="whitespace-pre-wrap text-sm">{prompt}</p>
+								{#if runPrompt.trim()}
+									<p class="whitespace-pre-wrap text-sm">{runPrompt}</p>
 								{/if}
 
 								{#if steps.length > 0}
