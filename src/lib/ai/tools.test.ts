@@ -4,6 +4,8 @@ import {
 	AI_TOOL_NAMES,
 	describeToolCall,
 	isAiToolName,
+	explainUnavailableTool,
+	isDocumentWideReplacement,
 	isMutatingTool,
 	isToolAvailable,
 	listAvailableTools,
@@ -37,6 +39,7 @@ describe('tool declarations', () => {
 		expect(isMutatingTool('update_document')).toBe(true);
 		expect(isMutatingTool('insert_at_cursor')).toBe(true);
 		expect(isMutatingTool('replace_selection')).toBe(true);
+		expect(isMutatingTool('replace_text')).toBe(true);
 		expect(isMutatingTool('list_documents')).toBe(false);
 		expect(isMutatingTool('read_document')).toBe(false);
 	});
@@ -49,11 +52,62 @@ describe('tool declarations', () => {
 
 		expect(listAvailableTools({ isSharingMode: true }).map((tool) => tool.function.name)).toEqual([
 			'list_documents',
+			'replace_text',
 			'read_document',
 			'insert_at_cursor',
 			'replace_selection'
 		]);
 		expect(listAvailableTools()).toHaveLength(AI_TOOL_NAMES.length);
+	});
+
+	it('limits a selection-scoped agent to replacing its selection', () => {
+		expect(isToolAvailable('replace_selection', { selectionOnly: true })).toBe(true);
+		expect(isToolAvailable('update_document', { selectionOnly: true })).toBe(false);
+		expect(isToolAvailable('insert_at_cursor', { selectionOnly: true })).toBe(false);
+		expect(listAvailableTools({ selectionOnly: true }).map((tool) => tool.function.name)).toEqual([
+			'list_documents',
+			'read_document',
+			'replace_selection'
+		]);
+	});
+
+	it('gates a body rewrite per call, keeping renames and appends available', () => {
+		// `update_document` also renames and appends, so withholding the whole tool
+		// would take those away from every run that did not tick the opt-in.
+		expect(isToolAvailable('update_document', { allowDocumentWideEdits: false })).toBe(true);
+		expect(
+			isDocumentWideReplacement({
+				name: 'update_document',
+				args: { text: 'body', mode: 'replace' }
+			})
+		).toBe(true);
+		expect(
+			isDocumentWideReplacement({ name: 'update_document', args: { text: 'more', mode: 'append' } })
+		).toBe(false);
+		expect(
+			isDocumentWideReplacement({
+				name: 'update_document',
+				args: { title: 'Renamed', mode: 'replace' }
+			})
+		).toBe(false);
+		expect(
+			isDocumentWideReplacement({ name: 'replace_text', args: { target: 'a', text: 'b' } })
+		).toBe(false);
+	});
+
+	it('explains which restriction withheld a tool', () => {
+		// The model acts on this reason, so each restriction must name itself: a
+		// selection-scoped refusal reported as a sharing restriction sends the model
+		// off explaining collaboration instead of editing the selection.
+		expect(explainUnavailableTool('update_document', { isSharingMode: true })).toContain(
+			'shared document'
+		);
+		expect(explainUnavailableTool('insert_at_cursor', { selectionOnly: true })).toContain(
+			'may only replace the selected text'
+		);
+		expect(
+			explainUnavailableTool('create_document', { selectionOnly: true, isSharingMode: true })
+		).toContain('shared document');
 	});
 
 	it('recognizes tool names', () => {
@@ -116,6 +170,26 @@ describe('validateToolCall', () => {
 		expect(validateToolCall('replace_selection', '{"text":" hello "}')).toEqual({
 			status: 'ok',
 			invocation: { name: 'replace_selection', args: { text: 'hello' } }
+		});
+	});
+
+	it('requires an exact original fragment for replace_text', () => {
+		expect(validateToolCall('replace_text', '{"target":"before","text":"after"}')).toEqual({
+			status: 'ok',
+			invocation: { name: 'replace_text', args: { target: 'before', text: 'after' } }
+		});
+		expect(validateToolCall('replace_text', '{"target":"  ","text":"after"}')).toEqual({
+			status: 'error',
+			message: 'replace_text requires non-empty "target"'
+		});
+	});
+
+	it('keeps the replace_text target verbatim but trims the replacement body', () => {
+		// The target is matched against the document character for character, so
+		// trimming it would replace a different span than the model asked for.
+		expect(validateToolCall('replace_text', '{"target":"old ","text":" new "}')).toEqual({
+			status: 'ok',
+			invocation: { name: 'replace_text', args: { target: 'old ', text: 'new' } }
 		});
 	});
 
@@ -220,6 +294,9 @@ describe('toolCallPreview', () => {
 		expect(
 			toolCallPreview({ name: 'update_document', args: { text: 'body', mode: 'append' } })
 		).toBe('body');
+		expect(
+			toolCallPreview({ name: 'replace_text', args: { target: 'before', text: 'after' } })
+		).toBe('Replace:\nbefore\n\nWith:\nafter');
 	});
 
 	it('is empty for reads and title-only updates', () => {

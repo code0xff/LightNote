@@ -75,11 +75,13 @@
 		generateText,
 		readOpenAiSettings,
 		toEditorHtml,
+		toInlineEditorHtml,
 		writeOpenAiSettings,
 		type AiAction,
 		type OpenAiSettings
 	} from '$lib/ai/openai';
 	import { checkAiRequest } from '$lib/ai/actions';
+	import { findExactTextRanges } from '$lib/ai/selection';
 	import { runAgent, type AgentEvent, type AgentStep, type ApprovalRequest } from '$lib/ai/agent';
 	import type { ChatMessage } from '$lib/ai/openai';
 	import { createDocumentToolExecutor } from '$lib/ai/documentTools';
@@ -142,6 +144,8 @@
 	let aiModelInput = DEFAULT_OPENAI_MODEL;
 	let aiOpen = false;
 	let aiSelection = '';
+	/** The captured range's text before trimming, for the validity check. */
+	let aiSelectionExact = '';
 	let aiSelectionRange: { from: number; to: number } | null = null;
 	let aiPrompt = '';
 	let aiError = '';
@@ -151,6 +155,7 @@
 	let aiSteps: AgentStep[] = [];
 	let aiAgentText = '';
 	let aiAutoApprove = false;
+	let aiAllowDocumentWideEdits = false;
 	let aiPendingApproval: {
 		description: string;
 		preview: string;
@@ -170,7 +175,27 @@
 	 * Transcript of a run that stopped early, so Continue can resume it instead of
 	 * starting over and redoing the work already recorded in it.
 	 */
-	let aiResume: { messages: ChatMessage[]; reason: 'max-steps' | 'stalled' } | null = null;
+	let aiResume: {
+		messages: ChatMessage[];
+		reason: 'max-steps' | 'stalled';
+		allowDocumentWideEdits: boolean;
+		/**
+		 * The scope the stopped run was given. Replacing the selection clears it, so
+		 * recomputing this on Continue would widen a selection-scoped run into a
+		 * document-wide one — with a transcript that still says the selection was the
+		 * only editable scope.
+		 */
+		selectionOnly: boolean;
+		/**
+		 * The scope's target, not just its flag. Reopening the panel recaptures
+		 * whatever is selected now, so a continuation that read live state could point
+		 * a selection-scoped run at newly selected, unrelated text — and session
+		 * auto-approve would apply it without asking again.
+		 */
+		selection: string;
+		selectionExact: string;
+		selectionRange: { from: number; to: number } | null;
+	} | null = null;
 
 	$: aiHasApiKey = Boolean(aiSettings.apiKey);
 
@@ -432,21 +457,43 @@
 	 */
 	function captureSelection() {
 		if (!editor) {
-			aiSelection = '';
-			aiSelectionRange = null;
+			clearAiSelection();
 			return;
 		}
 
 		const { from, to } = editor.state.selection;
-		const text = editor.state.doc.textBetween(from, to, '\n').trim();
+		const raw = editor.state.doc.textBetween(from, to, '\n');
+		const text = raw.trim();
 
 		aiSelection = text;
+		// The prompt and the panel show the trimmed text, but the validity check needs
+		// what the range actually held: comparing trimmed values would accept a range
+		// whose surrounding whitespace someone else has since changed.
+		aiSelectionExact = text ? raw : '';
 		aiSelectionRange = text ? { from, to } : null;
 	}
 
 	function clearAiSelection() {
 		aiSelection = '';
+		aiSelectionExact = '';
 		aiSelectionRange = null;
+	}
+
+	/** A stored range is valid only while it still points at the original text. */
+	function hasCurrentAiSelection(expected?: string) {
+		if (!editor || !aiSelectionRange || !aiSelection) {
+			return false;
+		}
+
+		const from = clampToDocument(aiSelectionRange.from);
+		const to = clampToDocument(aiSelectionRange.to);
+		if (from > to) {
+			return false;
+		}
+
+		const current = editor.state.doc.textBetween(from, to, '\n');
+
+		return current === aiSelectionExact && (!expected || expected === aiSelection);
 	}
 
 	/**
@@ -585,6 +632,7 @@
 		aiBusy = false;
 		aiSteps = [];
 		aiAgentText = '';
+		aiAllowDocumentWideEdits = false;
 		aiPendingApproval = null;
 		aiOpen = true;
 		// Cheap insurance: the history may have been pruned or cleared elsewhere.
@@ -601,6 +649,7 @@
 		}
 
 		aiOpen = false;
+		aiAllowDocumentWideEdits = false;
 	}
 
 	function saveAiKeyFromPanel() {
@@ -648,7 +697,7 @@
 				action,
 				settings: aiSettings,
 				selection,
-				context: getContextBeforeCursor(),
+				context: action === 'continue' ? getContextBeforeCursor() : '',
 				instruction: prompt,
 				signal: aiController?.signal
 			});
@@ -715,18 +764,31 @@
 		aiController = undefined;
 	}
 
-	function replaceSelectionWithResult(text: string) {
+	function replaceSelectionWithResult(text: string, expectedSelection?: string) {
 		if (!editor || !text) {
 			return;
 		}
 
-		const html = toEditorHtml(text);
-
-		if (aiSelectionRange) {
-			editor.chain().focus().insertContentAt(aiSelectionRange, html).run();
-		} else {
-			editor.chain().focus().insertContent(html).run();
+		// Replacing a changed (or unrelated) selection is worse than making the
+		// user choose where to insert. The explicit Insert action remains available.
+		if (!hasCurrentAiSelection(expectedSelection)) {
+			aiError = 'The original selection changed. Select the text again before replacing it.';
+			return;
 		}
+
+		const range = {
+			from: clampToDocument(aiSelectionRange!.from),
+			to: clampToDocument(aiSelectionRange!.to)
+		};
+		// A selection inside one paragraph must be replaced with inline HTML: a `<p>`
+		// block there splits the paragraph around the replacement.
+		const inline = isInlineRange(range) ? toInlineEditorHtml(text) : null;
+
+		editor
+			.chain()
+			.focus()
+			.insertContentAt(range, inline ?? toEditorHtml(text))
+			.run();
 
 		clearAiSelection();
 	}
@@ -741,6 +803,65 @@
 	}
 
 	/**
+	 * Maps exact source text back to one text block. The target is matched
+	 * verbatim, and both an ambiguous and a near-miss target are rejected rather
+	 * than adjusted: the approval preview shows the target the model sent, so
+	 * editing anything else — even a whitespace-trimmed variant of it — would let
+	 * the user approve one span while another is changed.
+	 */
+	function findExactTextMatches(target: string) {
+		const matches: Array<{ from: number; to: number }> = [];
+
+		editor.state.doc.descendants((node, position) => {
+			if (!node.isTextblock) {
+				return;
+			}
+
+			const segments: Array<{ from: number; text: string }> = [];
+			node.descendants((child, childPosition) => {
+				if (child.isText && child.text) {
+					segments.push({ from: position + 1 + childPosition, text: child.text });
+				}
+			});
+
+			matches.push(...findExactTextRanges(segments, target));
+			return false;
+		});
+
+		return matches;
+	}
+
+	/** True when a range starts and ends inside the same text block. */
+	function isInlineRange(range: { from: number; to: number }) {
+		const $from = editor.state.doc.resolve(range.from);
+		const $to = editor.state.doc.resolve(range.to);
+
+		return $from.sameParent($to) && $from.parent.isTextblock;
+	}
+
+	/**
+	 * Replaces a range with parsed markdown, keeping an in-paragraph edit inside its
+	 * paragraph. `insertContentAt` given a block node over an inline range splits the
+	 * block — replacing "world" in "Hello world" would leave "Hello " and "earth" as
+	 * two paragraphs — so a single-paragraph replacement of an inline range is
+	 * inserted as that paragraph's inline content instead. Any other shape (a
+	 * heading, a list, several blocks) is a deliberate block-level change and is
+	 * inserted as-is.
+	 */
+	function replaceRangeWithNodes(range: { from: number; to: number }, nodes: JSONContent[]) {
+		const inline =
+			isInlineRange(range) && nodes.length === 1 && nodes[0]?.type === 'paragraph'
+				? nodes[0].content
+				: undefined;
+
+		editor
+			.chain()
+			.focus()
+			.insertContentAt(range, inline && inline.length > 0 ? inline : nodes)
+			.run();
+	}
+
+	/**
 	 * Wire the AI tools to this editor instance. Edits to the open document go
 	 * through editor commands so they land in Tiptap history (and in Yjs while
 	 * sharing); only other documents are written straight to IndexedDB.
@@ -751,13 +872,19 @@
 			editor: {
 				getText: () =>
 					editor.state.doc.textBetween(0, editor.state.doc.content.size, '\n\n', '\n').trim(),
-				hasSelection: () => Boolean(aiSelectionRange) || !editor.state.selection.empty,
+				hasSelection: () => hasCurrentAiSelection(),
+				// A captured selection makes the run selection-scoped, which removes this
+				// tool, so the live cursor is the only position it can ever insert at.
 				insertAtCursor: (nodes) => {
-					const at = clampToDocument(aiSelectionRange?.to ?? editor.state.selection.to);
+					const at = clampToDocument(editor.state.selection.to);
 
 					editor.chain().focus().insertContentAt(at, nodes).run();
 				},
 				replaceSelection: (nodes) => {
+					if (!hasCurrentAiSelection()) {
+						return;
+					}
+
 					const range = aiSelectionRange
 						? {
 								from: clampToDocument(aiSelectionRange.from),
@@ -765,8 +892,29 @@
 							}
 						: { from: editor.state.selection.from, to: editor.state.selection.to };
 
-					editor.chain().focus().insertContentAt(range, nodes).run();
+					replaceRangeWithNodes(range, nodes);
 					clearAiSelection();
+				},
+				replaceExactText: (target, nodes) => {
+					const matches = findExactTextMatches(target);
+
+					if (matches.length === 0) {
+						return {
+							ok: false as const,
+							error:
+								'Target text was not found. Copy an exact fragment from one paragraph, with no added or missing whitespace; targets are matched verbatim and cannot cross paragraph or hard-break boundaries.'
+						};
+					}
+
+					if (matches.length > 1) {
+						return {
+							ok: false as const,
+							error: `Target text was found ${matches.length} times. Extend the target to make it unique.`
+						};
+					}
+
+					replaceRangeWithNodes(matches[0], nodes);
+					return { ok: true as const };
 				},
 				setContent: (nodes) => {
 					// `setContent` defaults to emitUpdate: false, which would skip the
@@ -842,6 +990,9 @@
 		// resubmitting the original prompt invites the model to redo work that the
 		// transcript already records as done.
 		const instruction = priorMessages ? 'Continue.' : aiPrompt;
+		const allowDocumentWideEdits = priorMessages
+			? aiResume?.allowDocumentWideEdits ?? false
+			: aiAllowDocumentWideEdits;
 		const check = checkAiRequest({
 			action: 'prompt',
 			hasApiKey: Boolean(aiSettings.apiKey),
@@ -858,12 +1009,33 @@
 		aiAgentText = '';
 		aiPendingApproval = null;
 
+		// A continuation belongs to the transcript it resumes, so it works from the
+		// selection that run was given rather than whatever the panel captured since.
+		if (priorMessages && aiResume) {
+			aiSelection = aiResume.selection;
+			aiSelectionExact = aiResume.selectionExact;
+			aiSelectionRange = aiResume.selectionRange;
+		}
+
+		// A captured selection whose range no longer matches the document cannot be
+		// replaced, and `selectionOnly` would then hand the run a tool set whose only
+		// write (replace_selection) always fails. Dropping it falls back to the
+		// targeted replace_text path instead of wasting the run. A continuation keeps
+		// the scope its transcript was written under, so it does not consult this.
+		if (!priorMessages && aiSelection && !hasCurrentAiSelection()) {
+			clearAiSelection();
+		}
+
 		const runId = startAiRun();
 		const prompt = instruction;
 		const selection = aiSelection;
+		const selectionOnly = priorMessages ? aiResume?.selectionOnly ?? false : Boolean(aiSelection);
 
 		if (!priorMessages) {
 			aiPrompt = '';
+			// This opt-in belongs to the one request just started, not the panel
+			// session. A stopped run carries it through its explicit Continue flow.
+			aiAllowDocumentWideEdits = false;
 		}
 
 		aiRunPrompt = prompt;
@@ -895,7 +1067,11 @@
 				},
 				isSharingMode,
 				selection,
-				context: getContextBeforeCursor(),
+				// Selection edits already include their complete target. Supplying the
+				// preceding document text makes it too easy to broaden the rewrite.
+				context: selection ? '' : getContextBeforeCursor(),
+				selectionOnly,
+				allowDocumentWideEdits,
 				signal: aiController?.signal
 			});
 
@@ -909,7 +1085,18 @@
 				}
 			} else if (isCurrentAiRun(runId)) {
 				// Keep the transcript so Continue can pick up where this left off.
-				aiResume = { messages: run.messages, reason: run.stopReason };
+				aiResume = {
+					messages: run.messages,
+					reason: run.stopReason,
+					allowDocumentWideEdits,
+					selectionOnly,
+					// The live values, not the ones captured at the start: a selection this
+					// run already replaced is genuinely gone, and the continuation must see
+					// that rather than resurrect a range whose text has changed.
+					selection: aiSelection,
+					selectionExact: aiSelectionExact,
+					selectionRange: aiSelectionRange
+				};
 				runError =
 					run.stopReason === 'stalled'
 						? 'The agent stopped because it kept repeating the same step.'
@@ -1731,6 +1918,8 @@
 		steps={aiSteps}
 		agentText={aiAgentText}
 		bind:autoApprove={aiAutoApprove}
+		bind:allowDocumentWideEdits={aiAllowDocumentWideEdits}
+		continueDocumentWideEdits={aiResume?.allowDocumentWideEdits ?? false}
 		pendingApproval={aiPendingApproval}
 		history={aiHistory}
 		continueReason={aiResume?.reason ?? null}

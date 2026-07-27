@@ -2,6 +2,7 @@ import type { AssistantMessage, ToolDefinition } from './openai';
 
 export const AI_TOOL_NAMES = [
 	'list_documents',
+	'replace_text',
 	'read_document',
 	'insert_at_cursor',
 	'replace_selection',
@@ -18,6 +19,7 @@ export type AiToolName = (typeof AI_TOOL_NAMES)[number];
 const MUTATING_TOOLS: readonly AiToolName[] = [
 	'insert_at_cursor',
 	'replace_selection',
+	'replace_text',
 	'create_document',
 	'update_document'
 ];
@@ -30,6 +32,14 @@ const MUTATING_TOOLS: readonly AiToolName[] = [
  */
 const STORE_WRITE_TOOLS: readonly AiToolName[] = ['create_document', 'update_document'];
 
+/** A selected fragment is an explicit safety boundary for an agent edit. */
+const SELECTION_SCOPED_UNAVAILABLE_TOOLS: readonly AiToolName[] = [
+	'insert_at_cursor',
+	'replace_text',
+	'create_document',
+	'update_document'
+];
+
 export type UpdateDocumentMode = 'replace' | 'append';
 
 export type AiToolInvocation =
@@ -37,6 +47,7 @@ export type AiToolInvocation =
 	| { name: 'read_document'; args: { id?: string } }
 	| { name: 'insert_at_cursor'; args: { text: string } }
 	| { name: 'replace_selection'; args: { text: string } }
+	| { name: 'replace_text'; args: { target: string; text: string } }
 	| { name: 'create_document'; args: { title: string; text: string } }
 	| {
 			name: 'update_document';
@@ -68,6 +79,26 @@ export const AI_TOOLS: ToolDefinition[] = [
 			description:
 				'List the saved documents with their id, title, and last update time. Call this before touching a document by id.',
 			parameters: { type: 'object', properties: {}, additionalProperties: false }
+		}
+	},
+	{
+		type: 'function',
+		function: {
+			name: 'replace_text',
+			description:
+				'Replace one exact, unique text fragment in the open document. Read the document first and copy the target exactly. The target must stay within one paragraph. This fails rather than guessing when the target is missing or appears more than once.',
+			parameters: {
+				type: 'object',
+				properties: {
+					target: {
+						type: 'string',
+						description: 'The exact original text to replace, copied verbatim from the document.'
+					},
+					text: { type: 'string', description: TEXT_ARGUMENT_DESCRIPTION }
+				},
+				required: ['target', 'text'],
+				additionalProperties: false
+			}
 		}
 	},
 	{
@@ -162,14 +193,55 @@ export function isMutatingTool(name: AiToolName): boolean {
 	return MUTATING_TOOLS.includes(name);
 }
 
-export function isToolAvailable(
-	name: AiToolName,
-	options: { isSharingMode?: boolean } = {}
-): boolean {
-	return !(options.isSharingMode && STORE_WRITE_TOOLS.includes(name));
+/** The three independent reasons a tool can be withheld from a run. */
+export type ToolAvailability = {
+	isSharingMode?: boolean;
+	selectionOnly?: boolean;
+	allowDocumentWideEdits?: boolean;
+};
+
+export function isToolAvailable(name: AiToolName, options: ToolAvailability = {}): boolean {
+	return !(
+		(options.isSharingMode && STORE_WRITE_TOOLS.includes(name)) ||
+		(options.selectionOnly && SELECTION_SCOPED_UNAVAILABLE_TOOLS.includes(name))
+	);
 }
 
-export function listAvailableTools(options: { isSharingMode?: boolean } = {}): ToolDefinition[] {
+/**
+ * Whether a call rewrites a whole document body — the operation the user opts into,
+ * as opposed to the renames and appends `update_document` also performs. Gating the
+ * tool by name would take those away too, so the gate belongs on the invocation.
+ */
+export function isDocumentWideReplacement(invocation: AiToolInvocation): boolean {
+	return (
+		invocation.name === 'update_document' &&
+		invocation.args.mode === 'replace' &&
+		Boolean(invocation.args.text)
+	);
+}
+
+export const DOCUMENT_WIDE_REPLACEMENT_REFUSAL =
+	'Replacing a whole document body is not allowed for this request: the user did not enable it. Rename or append with update_document, or edit one fragment with replace_text.';
+
+/**
+ * The reason a withheld tool is unavailable, in the same precedence order
+ * `isToolAvailable` applies. The model reads this and reports it to the user, so
+ * a wrong reason sends it down the wrong recovery path — telling the user that
+ * collaboration blocked a change instead of making the permitted targeted edit.
+ */
+export function explainUnavailableTool(name: AiToolName, options: ToolAvailability = {}): string {
+	if (options.isSharingMode && STORE_WRITE_TOOLS.includes(name)) {
+		return `${name} is not available while collaborating on a shared document`;
+	}
+
+	if (options.selectionOnly && SELECTION_SCOPED_UNAVAILABLE_TOOLS.includes(name)) {
+		return `${name} is not available because this request may only replace the selected text`;
+	}
+
+	return `${name} is not available for this request`;
+}
+
+export function listAvailableTools(options: ToolAvailability = {}): ToolDefinition[] {
 	return AI_TOOLS.filter((tool) => isToolAvailable(tool.function.name as AiToolName, options));
 }
 
@@ -200,29 +272,43 @@ function readOptionalString(value: unknown): { ok: true; value?: string } | { ok
 	return { ok: true, value: trimmed ? trimmed : undefined };
 }
 
-function readText(name: AiToolName, value: unknown): ToolValidation | { text: string } {
+function readText(
+	name: AiToolName,
+	value: unknown,
+	field = 'text',
+	/**
+	 * `replace_text`'s target is matched against the document character for
+	 * character, so trimming it would quietly edit a different span than the model
+	 * asked for (dropping a deliberate trailing space, for instance). Body text is
+	 * still trimmed: it goes through the markdown parser, where surrounding
+	 * whitespace carries no meaning.
+	 */
+	keepWhitespace = false
+): Extract<ToolValidation, { status: 'error' }> | { text: string } {
 	if (typeof value !== 'string') {
-		return { status: 'error', message: `${name} requires non-empty "text"` };
+		return { status: 'error', message: `${name} requires non-empty "${field}"` };
 	}
 
-	const text = value.trim();
+	const text = keepWhitespace ? value : value.trim();
 
-	if (!text) {
-		return { status: 'error', message: `${name} requires non-empty "text"` };
+	if (!text.trim()) {
+		return { status: 'error', message: `${name} requires non-empty "${field}"` };
 	}
 
 	if (text.length > MAX_TEXT_LENGTH) {
 		return {
 			status: 'error',
-			message: `${name} "text" is too long (${text.length} characters, limit ${MAX_TEXT_LENGTH}). Write less in one call.`
+			message: `${name} "${field}" is too long (${text.length} characters, limit ${MAX_TEXT_LENGTH}). Write less in one call.`
 		};
 	}
 
 	return { text };
 }
 
-function isValidationError(result: ToolValidation | { text: string }): result is ToolValidation {
-	return 'status' in result;
+function isValidationError(
+	result: Extract<ToolValidation, { status: 'error' }> | { text: string }
+): result is Extract<ToolValidation, { status: 'error' }> {
+	return 'status' in result && result.status === 'error';
 }
 
 /**
@@ -268,6 +354,20 @@ export function validateToolCall(name: string, rawArguments: string): ToolValida
 			}
 
 			return { status: 'ok', invocation: { name, args: { text: text.text } } };
+		}
+		case 'replace_text': {
+			const target = readText(name, args.target, 'target', true);
+			const text = readText(name, args.text);
+
+			if (isValidationError(target)) {
+				return target;
+			}
+
+			if (isValidationError(text)) {
+				return text;
+			}
+
+			return { status: 'ok', invocation: { name, args: { target: target.text, text: text.text } } };
 		}
 		case 'create_document': {
 			const text = readText(name, args.text);
@@ -346,6 +446,8 @@ export function toolCallPreview(invocation: AiToolInvocation): string {
 		case 'replace_selection':
 		case 'create_document':
 			return invocation.args.text;
+		case 'replace_text':
+			return `Replace:\n${invocation.args.target}\n\nWith:\n${invocation.args.text}`;
 		case 'update_document':
 			return invocation.args.text ?? '';
 		default:
@@ -366,6 +468,8 @@ export function describeToolCall(invocation: AiToolInvocation): string {
 			return 'Insert text at the cursor';
 		case 'replace_selection':
 			return 'Replace the selected text';
+		case 'replace_text':
+			return 'Replace an exact text fragment';
 		case 'create_document':
 			return `Create a new document "${invocation.args.title}"`;
 		case 'update_document': {

@@ -27,6 +27,7 @@ function deps(overrides: Partial<DocumentToolDeps> = {}) {
 		hasSelection: vi.fn(() => true),
 		insertAtCursor: vi.fn(),
 		replaceSelection: vi.fn(),
+		replaceExactText: vi.fn((): { ok: true } | { ok: false; error: string } => ({ ok: true })),
 		setContent: vi.fn(),
 		appendContent: vi.fn(),
 		setTitle: vi.fn()
@@ -212,6 +213,26 @@ describe('editor write tools', () => {
 			error: 'There is no selected text to replace.'
 		});
 		expect(editor.replaceSelection).not.toHaveBeenCalled();
+	});
+
+	it('replaces a unique exact fragment through the editor bridge', async () => {
+		const { deps: resolved, editor } = deps();
+		const execute = createDocumentToolExecutor(resolved);
+
+		expect(
+			await execute({ name: 'replace_text', args: { target: 'before', text: 'after' } })
+		).toEqual({ ok: true, data: { replaced: 6 } });
+		expect(editor.replaceExactText).toHaveBeenCalledWith('before', toContentNodes('after'));
+	});
+
+	it('does not write when an exact fragment is absent or ambiguous', async () => {
+		const { deps: resolved, editor } = deps();
+		editor.replaceExactText.mockReturnValue({ ok: false, error: 'Target text is not unique.' });
+		const execute = createDocumentToolExecutor(resolved);
+
+		await expect(
+			execute({ name: 'replace_text', args: { target: 'same', text: 'new' } })
+		).resolves.toEqual({ ok: false, error: 'Target text is not unique.' });
 	});
 });
 

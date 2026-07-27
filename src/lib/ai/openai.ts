@@ -179,7 +179,7 @@ export function buildMessages(action: AiAction, input: GenerateInput = {}): Prom
 				return [
 					{
 						role: 'system',
-						content: `You are a writing assistant. Apply the user's instruction to the provided text. ${SHARED_RULES}`
+						content: `You are a writing assistant. Apply the user's instruction only to the provided text. Return a replacement for that text alone; do not repeat, rewrite, or add any surrounding document content. ${SHARED_RULES}`
 					},
 					{
 						role: 'user',
@@ -299,14 +299,31 @@ export function parseCompletion(data: unknown): string {
 	return stripWrapping(message.content);
 }
 
-export function toEditorHtml(text: string): string {
-	const blocks = text
+/** The escaped inline HTML of each blank-line-separated block. */
+function toInlineBlocks(text: string): string[] {
+	return text
 		.split(/\n{2,}/)
 		.map((block) => block.trim())
 		.filter(Boolean)
-		.map((block) => `<p>${escapeHtml(block).replace(/\n/g, '<br>')}</p>`);
+		.map((block) => escapeHtml(block).replace(/\n/g, '<br>'));
+}
 
-	return blocks.length > 0 ? blocks.join('') : '<p></p>';
+export function toEditorHtml(text: string): string {
+	const blocks = toInlineBlocks(text);
+
+	return blocks.length > 0 ? blocks.map((block) => `<p>${block}</p>`).join('') : '<p></p>';
+}
+
+/**
+ * The inline HTML for a single-paragraph result, or null when it spans several
+ * paragraphs. Replacing a range that sits inside one paragraph with a `<p>` block
+ * splits that paragraph in two, so callers doing an in-paragraph replacement need
+ * the unwrapped form.
+ */
+export function toInlineEditorHtml(text: string): string | null {
+	const blocks = toInlineBlocks(text);
+
+	return blocks.length === 1 ? blocks[0] : null;
 }
 
 export function truncateContext(text: string, limit = CONTEXT_CHARACTER_LIMIT): string {

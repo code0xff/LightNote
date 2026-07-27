@@ -37,6 +37,11 @@ export type EditorBridge = {
 	hasSelection: () => boolean;
 	insertAtCursor: (nodes: JSONContent[]) => void;
 	replaceSelection: (nodes: JSONContent[]) => void;
+	/** Replaces an exact, uniquely occurring fragment or returns a safe failure. */
+	replaceExactText: (
+		target: string,
+		nodes: JSONContent[]
+	) => { ok: true } | { ok: false; error: string };
 	setContent: (nodes: JSONContent[]) => void;
 	appendContent: (nodes: JSONContent[]) => void;
 	setTitle: (title: string) => void;
@@ -207,6 +212,16 @@ export function createDocumentToolExecutor(deps: DocumentToolDeps) {
 				deps.editor.replaceSelection(toContentNodes(invocation.args.text));
 
 				return { ok: true, data: { replaced: invocation.args.text.length } };
+			}
+			case 'replace_text': {
+				const result = deps.editor.replaceExactText(
+					invocation.args.target,
+					toContentNodes(invocation.args.text)
+				);
+
+				return result.ok
+					? { ok: true, data: { replaced: invocation.args.target.length } }
+					: { ok: false, error: result.error };
 			}
 			case 'create_document': {
 				if (deps.isSharingMode) {

@@ -8,8 +8,11 @@ import {
 } from './openai';
 import { compressConversation } from './conversation';
 import {
+	DOCUMENT_WIDE_REPLACEMENT_REFUSAL,
 	describeToolCall,
+	explainUnavailableTool,
 	isAiToolName,
+	isDocumentWideReplacement,
 	isMutatingTool,
 	isToolAvailable,
 	listAvailableTools,
@@ -93,6 +96,10 @@ export type AgentDeps = {
 	requestApproval?: (request: ApprovalRequest) => Promise<boolean>;
 	onEvent?: (event: AgentEvent) => void;
 	isSharingMode?: boolean;
+	/** Limit mutations to replacing the captured selection. */
+	selectionOnly?: boolean;
+	/** Requires an explicit UI opt-in before the whole-document tool is exposed. */
+	allowDocumentWideEdits?: boolean;
 	selection?: string;
 	context?: string;
 	maxSteps?: number;
@@ -105,14 +112,18 @@ export type AgentDeps = {
 };
 
 export function buildAgentSystemPrompt(
-	options: { isSharingMode?: boolean; hasSelection?: boolean } = {}
+	options: {
+		isSharingMode?: boolean;
+		hasSelection?: boolean;
+		selectionOnly?: boolean;
+		allowDocumentWideEdits?: boolean;
+	} = {}
 ): string {
 	const lines = [
 		'You are the writing agent inside LightNote, an offline-first note editor. You can inspect and change the user documents only through the provided tools.',
 		'Rules:',
 		'- Respond in the same language as the user.',
 		'- Call list_documents before referring to a document id; never invent an id.',
-		'- For the document the user has open, prefer insert_at_cursor or replace_selection over update_document so the change stays undoable.',
 		'- Never touch a document the user did not ask about, and make the smallest change that satisfies the request.',
 		'- Tool text arguments accept a markdown subset (headings, lists, quotes, fenced code, bold, italic, inline code, links) which is converted to rich content. Avoid tables and nested lists.',
 		'- Tool text is written into the document verbatim, so it must contain document content only. Never put explanations, progress notes, or descriptions of what you changed into a tool argument — those belong in your reply, which the user reads next to the document.',
@@ -124,6 +135,32 @@ export function buildAgentSystemPrompt(
 		lines.push(
 			'- This document is in a shared collaboration session, so create_document and update_document are unavailable. Use the editor tools only.'
 		);
+	}
+
+	// Every write rule is scope-dependent: `selectionOnly` leaves replace_selection
+	// as the only available mutation, so naming any other write here would spend a
+	// step on a call the loop refuses as unavailable.
+	if (options.selectionOnly) {
+		lines.push(
+			options.hasSelection
+				? '- The selected text is the only editable scope for this request. Use replace_selection once with a replacement for that text only; do not insert elsewhere, create a document, or rewrite a whole document.'
+				: // Reached by continuing a selection-scoped run that already replaced its
+					// selection: the scope is spent, and no other write is available, so the
+					// only useful move left is to finish the reply.
+					'- This request was scoped to a selection that has already been replaced, so no further edit is possible. Do not call a write tool; reply describing what was changed.'
+		);
+	} else {
+		lines.push(
+			"- For new writing in the open document, use insert_at_cursor at the user's cursor. Create a document only when the user asks for a new document.",
+			'- For a targeted edit, read the open document, then use replace_text with the exact original fragment and its replacement. This tool rejects missing or repeated text instead of guessing.',
+			'- Never use update_document to change a document body unless the user explicitly asks to replace the whole document.'
+		);
+
+		if (options.allowDocumentWideEdits === false) {
+			lines.push(
+				'- Whole-document replacement is not enabled for this request: update_document may rename a document or append to it, but replacing a document body will be refused. Make targeted edits with replace_text instead.'
+			);
+		}
 	}
 
 	lines.push(
@@ -247,39 +284,37 @@ async function runTool(
 export async function runAgent(instruction: string, deps: AgentDeps): Promise<AgentRun> {
 	const maxSteps = normalizeMaxSteps(deps.maxSteps);
 	const isSharingMode = Boolean(deps.isSharingMode);
-	const tools = listAvailableTools({ isSharingMode });
+	const selectionOnly = Boolean(deps.selectionOnly);
+	const allowDocumentWideEdits = Boolean(deps.allowDocumentWideEdits);
+	const tools = listAvailableTools({ isSharingMode, selectionOnly, allowDocumentWideEdits });
 	const emit = (event: AgentEvent) => deps.onEvent?.(event);
 
-	// Continuing keeps the stopped run's transcript and appends the new
-	// instruction, so the model does not redo work already recorded in it.
+	const systemMessage: ChatMessage = {
+		role: 'system',
+		content: buildAgentSystemPrompt({
+			isSharingMode,
+			hasSelection: Boolean(deps.selection?.trim()),
+			selectionOnly,
+			allowDocumentWideEdits
+		})
+	};
+	const userMessage: ChatMessage = {
+		role: 'user',
+		content: buildAgentUserMessage(instruction, {
+			selection: deps.selection,
+			context: deps.context
+		})
+	};
+	// Continuing keeps the stopped run's transcript and appends the new instruction,
+	// so the model does not redo work already recorded in it — but the rules come
+	// from the live deps, not from the stopped run. Replaying the old system prompt
+	// would keep telling the model to replace a selection that has since been
+	// replaced, spending a step (and an approval prompt) on a write that cannot land.
+	const prior = deps.priorMessages ?? [];
 	const messages: ChatMessage[] =
-		deps.priorMessages && deps.priorMessages.length > 0
-			? [
-					...deps.priorMessages,
-					{
-						role: 'user',
-						content: buildAgentUserMessage(instruction, {
-							selection: deps.selection,
-							context: deps.context
-						})
-					}
-				]
-			: [
-					{
-						role: 'system',
-						content: buildAgentSystemPrompt({
-							isSharingMode,
-							hasSelection: Boolean(deps.selection?.trim())
-						})
-					},
-					{
-						role: 'user',
-						content: buildAgentUserMessage(instruction, {
-							selection: deps.selection,
-							context: deps.context
-						})
-					}
-				];
+		prior.length > 0
+			? [systemMessage, ...(prior[0].role === 'system' ? prior.slice(1) : prior), userMessage]
+			: [systemMessage, userMessage];
 
 	const steps: AgentStep[] = [];
 	/** Call signatures seen so far, to tell progress from spinning. */
@@ -404,7 +439,9 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 			const { invocation } = validation;
 			const description = describeToolCall(invocation);
 
-			if (!isToolAvailable(invocation.name, { isSharingMode })) {
+			const availability = { isSharingMode, selectionOnly, allowDocumentWideEdits };
+
+			if (!isToolAvailable(invocation.name, availability)) {
 				record({
 					callId: call.id,
 					name: invocation.name,
@@ -413,8 +450,22 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 					invocation,
 					result: {
 						ok: false,
-						error: `${invocation.name} is not available while collaborating on a shared document`
+						error: explainUnavailableTool(invocation.name, availability)
 					}
+				});
+				continue;
+			}
+
+			// Refused per call, not per tool: `update_document` still renames and
+			// appends without the opt-in, and only a body rewrite needs it.
+			if (!allowDocumentWideEdits && isDocumentWideReplacement(invocation)) {
+				record({
+					callId: call.id,
+					name: invocation.name,
+					description,
+					status: 'unavailable',
+					invocation,
+					result: { ok: false, error: DOCUMENT_WIDE_REPLACEMENT_REFUSAL }
 				});
 				continue;
 			}

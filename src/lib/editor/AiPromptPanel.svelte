@@ -29,6 +29,13 @@
 	export let steps: AgentStep[] = [];
 	export let agentText = '';
 	export let autoApprove = false;
+	export let allowDocumentWideEdits = false;
+	/**
+	 * The permission the resumable run carries. `allowDocumentWideEdits` is a
+	 * per-request opt-in that resets, so without this the panel would show an
+	 * unchecked box while Continue resumes a run that still holds the permission.
+	 */
+	export let continueDocumentWideEdits = false;
 	export let pendingApproval: { description: string; preview?: string } | null = null;
 	export let history: AiHistoryEntry[] = [];
 	/** Set when the last run stopped early and can be resumed. */
@@ -45,7 +52,7 @@
 	export let onRunAgent: () => void;
 	export let onApproval: (approved: boolean) => void;
 	export let onCancel: () => void;
-	export let onReplaceSelection: (text: string) => void;
+	export let onReplaceSelection: (text: string, selection: string) => void;
 	export let onInsertAtCursor: (text: string) => void;
 	export let onClearSelection: () => void;
 	export let onOpenSettings: () => void;
@@ -272,11 +279,11 @@
 									</div>
 									{#if entry.mode === 'ask'}
 										<div class="flex flex-wrap justify-end gap-2">
-											{#if selection}
+											{#if entry.selection && entry.selection === selection}
 												<Button
 													variant="outline"
 													class="h-7 px-3"
-													on:click={() => onReplaceSelection(entry.response)}
+													on:click={() => onReplaceSelection(entry.response, entry.selection ?? '')}
 												>
 													Replace selection
 												</Button>
@@ -376,6 +383,13 @@
 							? 'Reads your documents and, with your approval, creates and edits them.'
 							: 'Returns text for you to insert — nothing changes until you apply it.'}
 					</p>
+					{#if !selection}
+						<p class="text-xs text-muted-foreground">
+							{mode === 'agent'
+								? 'Describe what to write or change. AI can insert new writing at the cursor or propose an exact replacement for approval.'
+								: 'Select text to request a focused rewrite, or use Agent mode to write into the document.'}
+						</p>
+					{/if}
 
 					{#if selection}
 						<div class="grid gap-2">
@@ -508,6 +522,22 @@
 								/>
 								Approve changes automatically for this session
 							</label>
+							{#if !selection}
+								<label class="flex items-center gap-2 text-xs text-muted-foreground">
+									<input
+										type="checkbox"
+										class="h-3.5 w-3.5 rounded border-input"
+										bind:checked={allowDocumentWideEdits}
+									/>
+									Allow full-document replacements for this request
+								</label>
+							{/if}
+							{#if canContinue && continueDocumentWideEdits}
+								<span class="text-xs text-muted-foreground">
+									The stopped run was allowed full-document replacements; Continue resumes it with
+									that permission.
+								</span>
+							{/if}
 							{#if autoApprove}
 								<span class="flex items-start gap-1.5 text-xs text-destructive">
 									<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />

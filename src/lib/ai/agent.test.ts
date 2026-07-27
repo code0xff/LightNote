@@ -98,6 +98,7 @@ describe('agent prompts', () => {
 		const normal = buildAgentSystemPrompt({ hasSelection: true });
 
 		expect(normal).toContain('replace_selection is available');
+		expect(normal).toContain('insert_at_cursor');
 		expect(normal).not.toContain('shared collaboration session');
 
 		// Explanations belong in the reply, never in a tool argument.
@@ -107,6 +108,45 @@ describe('agent prompts', () => {
 
 		expect(sharing).toContain('shared collaboration session');
 		expect(sharing).toContain('replace_selection will fail');
+	});
+
+	it('keeps an agent with a selection inside that selection', () => {
+		const prompt = buildAgentSystemPrompt({ hasSelection: true, selectionOnly: true });
+
+		expect(prompt).toContain('only editable scope');
+		expect(prompt).toContain('replace_selection once');
+	});
+
+	it('does not tell a selection-scoped agent to use unavailable tools', () => {
+		const prompt = buildAgentSystemPrompt({
+			hasSelection: true,
+			selectionOnly: true,
+			allowDocumentWideEdits: false
+		});
+
+		// Naming a withheld write costs a step: the loop refuses the call as
+		// unavailable, so the only mutation left must be the only one mentioned.
+		expect(prompt).not.toContain('replace_text');
+		expect(prompt).not.toContain('insert_at_cursor');
+		expect(prompt).not.toContain('update_document');
+		expect(prompt).not.toContain('Whole-document replacement is not enabled');
+	});
+
+	it('tells a spent selection scope to finish instead of writing', () => {
+		// Continuing a selection-scoped run that already replaced its selection: the
+		// only write it has is replace_selection, which now has no target, so asking
+		// for one more edit would only produce a failing call.
+		const prompt = buildAgentSystemPrompt({ selectionOnly: true, hasSelection: false });
+
+		expect(prompt).toContain('already been replaced');
+		expect(prompt).toContain('Do not call a write tool');
+		expect(prompt).not.toContain('replace_selection once');
+	});
+
+	it('does not expose full-document replacement without an explicit opt-in', () => {
+		const prompt = buildAgentSystemPrompt({ allowDocumentWideEdits: false });
+
+		expect(prompt).toContain('Whole-document replacement is not enabled');
 	});
 
 	it('appends selection and context sections to the instruction', () => {
@@ -291,6 +331,35 @@ describe('runAgent', () => {
 		);
 	});
 
+	it('refuses a body rewrite without the opt-in but allows a rename', async () => {
+		const { fetchImpl } = scriptedFetch([
+			{ calls: [{ id: 'c1', name: 'update_document', args: '{"text":"whole new body"}' }] },
+			{ calls: [{ id: 'c2', name: 'update_document', args: '{"title":"Renamed"}' }] },
+			{ text: 'renamed it instead' }
+		]);
+		const executeTool = vi.fn(async () => ({ ok: true as const, data: { updated: true } }));
+		const requestApproval = vi.fn(async () => true);
+
+		const run = await runAgent('rewrite it', {
+			settings,
+			executeTool,
+			requestApproval,
+			fetchImpl
+		});
+
+		// The refusal must not reach approval: the prompt the user would see says
+		// nothing about the permission they never granted.
+		expect(run.steps[0]).toMatchObject({ status: 'unavailable' });
+		expect(run.steps[0].result).toMatchObject({ ok: false });
+		expect(requestApproval).toHaveBeenCalledTimes(1);
+		expect(executeTool).toHaveBeenCalledTimes(1);
+		expect(executeTool).toHaveBeenCalledWith({
+			name: 'update_document',
+			args: { id: undefined, title: 'Renamed', mode: 'replace' }
+		});
+		expect(run.steps[1]).toMatchObject({ status: 'done' });
+	});
+
 	it('turns a thrown tool error into a failed result', async () => {
 		const { fetchImpl } = scriptedFetch([
 			{ calls: [{ id: 'c1', name: 'read_document', args: '{}' }] },
@@ -384,6 +453,41 @@ describe('runAgent', () => {
 		expect(input).toHaveLength(initial.messages.length + 1);
 		expect(input[0].role).toBe('system');
 		expect(input[input.length - 1]).toEqual({ role: 'user', content: 'Continue.' });
+	});
+
+	it('rebuilds the system prompt for a continuation instead of replaying it', async () => {
+		// The stopped run was scoped to a selection it has since replaced. Replaying
+		// its system prompt would keep ordering another replace_selection, which can
+		// only reach an approval prompt and then fail.
+		const first = scriptedFetch([{ text: 'replaced it' }]);
+		const initial = await runAgent('fix the sentence', {
+			settings,
+			executeTool: vi.fn(),
+			selection: 'the old sentence',
+			selectionOnly: true,
+			fetchImpl: first.fetchImpl
+		});
+
+		expect(initial.messages[0].content).toContain('replace_selection once');
+
+		const second = scriptedFetch([{ text: 'nothing left to change' }]);
+		await runAgent('Continue.', {
+			settings,
+			executeTool: vi.fn(),
+			priorMessages: initial.messages,
+			selectionOnly: true,
+			fetchImpl: second.fetchImpl
+		});
+
+		const input = second.bodies[0].input as Array<{ role?: string; content?: string }>;
+
+		expect(input[0].role).toBe('system');
+		expect(input[0].content).toContain('already been replaced');
+		expect(input.filter((item) => item.content?.includes('replace_selection once'))).toHaveLength(
+			0
+		);
+		// The old prompt is replaced, not appended alongside the new one.
+		expect(input.filter((item) => item.role === 'system')).toHaveLength(1);
 	});
 
 	it('stops the rest of a batch when cancelled during a tool call', async () => {

@@ -15,6 +15,7 @@ import {
 	TOOL_REASONING_EFFORT,
 	stripWrapping,
 	toEditorHtml,
+	toInlineEditorHtml,
 	truncateContext,
 	truncateSelection,
 	writeOpenAiSettings
@@ -154,6 +155,15 @@ describe('output handling', () => {
 		expect(toEditorHtml('first\n\nsecond')).toBe('<p>first</p><p>second</p>');
 		expect(toEditorHtml('line<one>\nline&two')).toBe('<p>line&lt;one&gt;<br>line&amp;two</p>');
 		expect(toEditorHtml('   ')).toBe('<p></p>');
+	});
+
+	it('unwraps a single-paragraph result for an in-paragraph replacement', () => {
+		// Inserting a <p> block over a range inside a paragraph splits that paragraph,
+		// so a one-block result has to be applied as inline content instead.
+		expect(toInlineEditorHtml('earth')).toBe('earth');
+		expect(toInlineEditorHtml('line<one>\nline&two')).toBe('line&lt;one&gt;<br>line&amp;two');
+		expect(toInlineEditorHtml('first\n\nsecond')).toBeNull();
+		expect(toInlineEditorHtml('   ')).toBeNull();
 	});
 
 	it('keeps only the tail of an over-long context', () => {
