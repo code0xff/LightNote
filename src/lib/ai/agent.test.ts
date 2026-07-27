@@ -3,6 +3,7 @@ import {
 	buildAgentSystemPrompt,
 	buildAgentUserMessage,
 	DEFAULT_AGENT_MAX_STEPS,
+	MAX_STALLED_ROUNDS,
 	MAX_TOOL_CALLS_PER_STEP,
 	runAgent,
 	stringifyToolResult,
@@ -32,24 +33,59 @@ function scriptedFetch(turns: Turn[]) {
 		const turn = turns[Math.min(index, turns.length - 1)];
 		index += 1;
 
+		// Tool-carrying requests go to /v1/responses, so the fake replies in that
+		// shape: an optional assistant message item plus one item per tool call.
 		return {
 			ok: true,
 			json: async () => ({
-				choices: [
-					{
-						message: {
-							content: 'text' in turn ? turn.text : null,
-							tool_calls:
-								'calls' in turn
-									? turn.calls.map((call) => ({
-											id: call.id,
-											type: 'function',
-											function: { name: call.name, arguments: call.args }
-										}))
-									: undefined
-						}
-					}
+				output: [
+					...('text' in turn
+						? [
+								{
+									type: 'message',
+									role: 'assistant',
+									content: [{ type: 'output_text', text: turn.text }]
+								}
+							]
+						: []),
+					...('calls' in turn
+						? turn.calls.map((call) => ({
+								type: 'function_call',
+								call_id: call.id,
+								name: call.name,
+								arguments: call.args
+							}))
+						: [])
 				]
+			})
+		};
+	}) as unknown as typeof fetch;
+
+	return { fetchImpl, bodies };
+}
+
+/**
+ * Always answers with a single tool call. `unique: true` varies the arguments so
+ * the run makes progress; `false` repeats the same call, which is what stall
+ * detection is meant to catch.
+ */
+function repeatingFetch(options: { unique: boolean }) {
+	const bodies: Array<Record<string, unknown>> = [];
+	let round = 0;
+
+	const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+		bodies.push(JSON.parse(init.body as string));
+
+		const item = options.unique
+			? { name: 'read_document', arguments: `{"id":"d${round}"}` }
+			: { name: 'list_documents', arguments: '{}' };
+		const callId = `c${round}`;
+		round += 1;
+
+		return {
+			ok: true,
+			json: async () => ({
+				output: [{ type: 'function_call', call_id: callId, ...item }]
 			})
 		};
 	}) as unknown as typeof fetch;
@@ -101,7 +137,9 @@ describe('runAgent', () => {
 
 		const run = await runAgent('hello', { settings, executeTool, fetchImpl });
 
-		expect(run).toEqual({ text: 'nothing to do', steps: [], stopReason: 'completed' });
+		expect(run).toMatchObject({ text: 'nothing to do', steps: [], stopReason: 'completed' });
+		// The transcript comes back so a stopped run can be continued.
+		expect(run.messages).toHaveLength(3);
 		expect(executeTool).not.toHaveBeenCalled();
 		expect((bodies[0].tools as unknown[]).length).toBeGreaterThan(0);
 	});
@@ -132,12 +170,12 @@ describe('runAgent', () => {
 		expect(run.steps[0]).toMatchObject({ callId: 'c1', name: 'list_documents', status: 'done' });
 		expect(requestApproval).not.toHaveBeenCalled();
 
-		const followUp = bodies[1].messages as Array<Record<string, unknown>>;
-		expect(followUp[2]).toMatchObject({ role: 'assistant' });
+		const followUp = bodies[1].input as Array<Record<string, unknown>>;
+		expect(followUp[2]).toMatchObject({ type: 'function_call', call_id: 'c1' });
 		expect(followUp[3]).toEqual({
-			role: 'tool',
-			tool_call_id: 'c1',
-			content: '{"ok":true,"data":[{"id":"d1","title":"Notes"}]}'
+			type: 'function_call_output',
+			call_id: 'c1',
+			output: '{"ok":true,"data":[{"id":"d1","title":"Notes"}]}'
 		});
 	});
 
@@ -190,9 +228,9 @@ describe('runAgent', () => {
 
 		expect(executeTool).not.toHaveBeenCalled();
 		expect(refused.steps[0]).toMatchObject({ status: 'denied' });
-		expect((denied.bodies[1].messages as Array<Record<string, unknown>>)[3]).toMatchObject({
-			role: 'tool',
-			tool_call_id: 'c1'
+		expect((denied.bodies[1].input as Array<Record<string, unknown>>)[3]).toMatchObject({
+			type: 'function_call_output',
+			call_id: 'c1'
 		});
 
 		const noApprover = scriptedFetch([{ calls: [call] }, { text: 'stopped' }]);
@@ -220,9 +258,9 @@ describe('runAgent', () => {
 			status: 'invalid',
 			result: { ok: false, error: 'update_document requires at least one of "title" or "text"' }
 		});
-		expect((bodies[1].messages as Array<Record<string, unknown>>)[3]).toMatchObject({
-			role: 'tool',
-			tool_call_id: 'c1'
+		expect((bodies[1].input as Array<Record<string, unknown>>)[3]).toMatchObject({
+			type: 'function_call_output',
+			call_id: 'c1'
 		});
 	});
 
@@ -245,9 +283,9 @@ describe('runAgent', () => {
 		expect(requestApproval).not.toHaveBeenCalled();
 		expect(executeTool).not.toHaveBeenCalled();
 		expect(run.steps[0]).toMatchObject({ status: 'unavailable' });
-		expect(
-			(bodies[0].tools as Array<{ function: { name: string } }>).map((t) => t.function.name)
-		).not.toContain('create_document');
+		expect((bodies[0].tools as Array<{ name: string }>).map((tool) => tool.name)).not.toContain(
+			'create_document'
+		);
 	});
 
 	it('turns a thrown tool error into a failed result', async () => {
@@ -267,13 +305,11 @@ describe('runAgent', () => {
 		});
 	});
 
-	it('stops at the step budget when the model keeps calling tools', async () => {
-		const { fetchImpl } = scriptedFetch([
-			{ calls: [{ id: 'c1', name: 'list_documents', args: '{}' }] }
-		]);
+	it('stops at the step budget while the model keeps making progress', async () => {
+		const { fetchImpl } = repeatingFetch({ unique: true });
 		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true, data: [] }));
 
-		const run = await runAgent('loop forever', {
+		const run = await runAgent('keep reading', {
 			settings,
 			executeTool,
 			maxSteps: 3,
@@ -282,7 +318,69 @@ describe('runAgent', () => {
 
 		expect(run.stopReason).toBe('max-steps');
 		expect(executeTool).toHaveBeenCalledTimes(3);
-		expect(DEFAULT_AGENT_MAX_STEPS).toBe(8);
+		expect(DEFAULT_AGENT_MAX_STEPS).toBe(24);
+	});
+
+	it('stops a run that keeps repeating the same call', async () => {
+		const { fetchImpl } = repeatingFetch({ unique: false });
+		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true, data: [] }));
+
+		const run = await runAgent('spin', { settings, executeTool, fetchImpl });
+
+		expect(run.stopReason).toBe('stalled');
+		// The first sighting runs, the repeat runs, the second repeat stops it —
+		// well before the step budget of 24.
+		expect(executeTool).toHaveBeenCalledTimes(MAX_STALLED_ROUNDS);
+		expect(MAX_STALLED_ROUNDS).toBe(2);
+	});
+
+	it('compresses older rounds into a ledger before sending', async () => {
+		const { fetchImpl, bodies } = repeatingFetch({ unique: true });
+		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true, data: [] }));
+
+		await runAgent('keep reading', {
+			settings,
+			executeTool,
+			maxSteps: 4,
+			recentRounds: 1,
+			fetchImpl
+		});
+
+		const lastInput = bodies[bodies.length - 1].input as Array<{
+			role?: string;
+			content?: string;
+		}>;
+		const ledger = lastInput.find((item) => item.content?.includes('already completed'));
+
+		expect(ledger?.role).toBe('system');
+		expect(ledger?.content).toContain('read_document(id=d0)');
+		// Only the most recent round stays verbatim as call/output items.
+		expect(lastInput.filter((item) => !item.role)).toHaveLength(2);
+	});
+
+	it('continues a stopped run from its transcript', async () => {
+		const first = scriptedFetch([{ text: 'stopped early' }]);
+		const initial = await runAgent('start', {
+			settings,
+			executeTool: vi.fn(),
+			fetchImpl: first.fetchImpl
+		});
+
+		const second = scriptedFetch([{ text: 'finished' }]);
+		const resumed = await runAgent('Continue.', {
+			settings,
+			executeTool: vi.fn(),
+			priorMessages: initial.messages,
+			fetchImpl: second.fetchImpl
+		});
+
+		const input = second.bodies[0].input as Array<{ role?: string; content?: string }>;
+
+		expect(resumed.text).toBe('finished');
+		// The prior transcript is reused instead of rebuilding a fresh conversation.
+		expect(input).toHaveLength(initial.messages.length + 1);
+		expect(input[0].role).toBe('system');
+		expect(input[input.length - 1]).toEqual({ role: 'user', content: 'Continue.' });
 	});
 
 	it('stops the rest of a batch when cancelled during a tool call', async () => {
@@ -358,34 +456,118 @@ describe('runAgent', () => {
 
 		expect(executeTool).toHaveBeenCalledTimes(MAX_TOOL_CALLS_PER_STEP);
 		expect(run.steps).toHaveLength(calls.length);
-		expect(
-			run.steps.slice(MAX_TOOL_CALLS_PER_STEP).every((step) => step.status === 'invalid')
-		).toBe(true);
+		// Capped calls are answered first, so count rather than assume an order.
+		expect(run.steps.filter((step) => step.status === 'invalid')).toHaveLength(
+			calls.length - MAX_TOOL_CALLS_PER_STEP
+		);
+		expect(run.steps.filter((step) => step.status === 'done')).toHaveLength(
+			MAX_TOOL_CALLS_PER_STEP
+		);
 	});
 
 	it('normalizes a non-finite or fractional step budget', async () => {
-		const { fetchImpl } = scriptedFetch([
-			{ calls: [{ id: 'c1', name: 'list_documents', args: '{}' }] }
-		]);
 		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true, data: [] }));
-
-		const fractional = await runAgent('loop', { settings, executeTool, maxSteps: 2.7, fetchImpl });
+		const fractional = await runAgent('loop', {
+			settings,
+			executeTool,
+			maxSteps: 2.7,
+			fetchImpl: repeatingFetch({ unique: true }).fetchImpl
+		});
 
 		expect(fractional.stopReason).toBe('max-steps');
 		expect(executeTool).toHaveBeenCalledTimes(2);
 
 		executeTool.mockClear();
-		const infinite = scriptedFetch([{ calls: [{ id: 'c1', name: 'list_documents', args: '{}' }] }]);
 
+		// Infinity would otherwise mean an unbounded loop; it falls back to the
+		// default budget instead.
 		const unbounded = await runAgent('loop', {
 			settings,
 			executeTool,
 			maxSteps: Number.POSITIVE_INFINITY,
-			fetchImpl: infinite.fetchImpl
+			fetchImpl: repeatingFetch({ unique: true }).fetchImpl
 		});
 
 		expect(unbounded.stopReason).toBe('max-steps');
 		expect(executeTool).toHaveBeenCalledTimes(DEFAULT_AGENT_MAX_STEPS);
+	});
+
+	it('answers every pending call when it stops for a stall', async () => {
+		const { fetchImpl } = repeatingFetch({ unique: false });
+		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true, data: [] }));
+
+		const run = await runAgent('spin', { settings, executeTool, fetchImpl });
+
+		// A transcript ending in an unanswered call cannot be continued: the API
+		// requires an output for every function call.
+		const callIds = run.messages.flatMap((message) =>
+			message.role === 'assistant' ? (message.tool_calls ?? []).map((call) => call.id) : []
+		);
+		const resultIds = run.messages.flatMap((message) =>
+			message.role === 'tool' ? [message.tool_call_id] : []
+		);
+
+		expect(callIds).toHaveLength(3);
+		expect(resultIds.sort()).toEqual(callIds.sort());
+		expect(run.steps[run.steps.length - 1].result).toEqual({
+			ok: false,
+			error: 'Stopped: this call repeated an earlier one, so the run was making no progress.'
+		});
+	});
+
+	it('refuses to apply a mutation the resumed transcript already applied', async () => {
+		const apply = { id: 'c1', name: 'insert_at_cursor', args: '{"text":"hi"}' };
+		const first = scriptedFetch([{ calls: [apply] }, { text: 'inserted' }]);
+		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true }));
+
+		const initial = await runAgent('insert it', {
+			settings,
+			executeTool,
+			requestApproval: async () => true,
+			fetchImpl: first.fetchImpl
+		});
+
+		expect(executeTool).toHaveBeenCalledTimes(1);
+
+		// The resumed model asks for the identical change again.
+		const second = scriptedFetch([
+			{ calls: [{ ...apply, id: 'c2' }] },
+			{ text: 'nothing left to do' }
+		]);
+		const requestApproval = vi.fn(async () => true);
+		const resumed = await runAgent('Continue.', {
+			settings,
+			executeTool,
+			requestApproval,
+			priorMessages: initial.messages,
+			fetchImpl: second.fetchImpl
+		});
+
+		expect(executeTool).toHaveBeenCalledTimes(1);
+		// Not even an approval prompt: the duplicate never gets that far.
+		expect(requestApproval).not.toHaveBeenCalled();
+		expect(resumed.steps[0]).toMatchObject({ status: 'duplicate' });
+	});
+
+	it('counts only the calls it will run toward a stall', async () => {
+		const repeated = { id: 'r1', name: 'list_documents', args: '{}' };
+		const overflow = Array.from({ length: MAX_TOOL_CALLS_PER_STEP + 1 }, (_, index) => ({
+			id: `x${index}`,
+			name: 'read_document',
+			args: `{"id":"d${index}"}`
+		}));
+		const { fetchImpl } = scriptedFetch([
+			{ calls: [repeated] },
+			{ calls: [repeated, ...overflow] },
+			{ text: 'done' }
+		]);
+		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true, data: [] }));
+
+		const run = await runAgent('mix', { settings, executeTool, maxSteps: 4, fetchImpl });
+
+		// The capped calls are answered but never run, so they cannot mask a stall.
+		expect(run.steps.filter((step) => step.status === 'invalid').length).toBeGreaterThan(0);
+		expect(run.stopReason).toBe('completed');
 	});
 
 	it('throws an AbortError when the signal is already aborted', async () => {
@@ -415,10 +597,10 @@ describe('runAgent', () => {
 			fetchImpl
 		});
 
-		const messages = bodies[0].messages as Array<{ role: string; content: string }>;
-		expect(messages[0].role).toBe('system');
-		expect(messages[1].content).toContain('a long sentence');
-		expect(messages[1].content).toContain('preceding paragraph');
+		const input = bodies[0].input as Array<{ role: string; content: string }>;
+		expect(input[0].role).toBe('system');
+		expect(input[1].content).toContain('a long sentence');
+		expect(input[1].content).toContain('preceding paragraph');
 	});
 
 	const invocation: AiToolInvocation = { name: 'list_documents', args: {} };

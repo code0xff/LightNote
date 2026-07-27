@@ -12,12 +12,14 @@ import {
 	readOpenAiSettings,
 	requestChatMessage,
 	resolveModelOptions,
+	TOOL_REASONING_EFFORT,
 	stripWrapping,
 	toEditorHtml,
 	truncateContext,
 	truncateSelection,
 	writeOpenAiSettings
 } from './openai';
+import { OPENAI_RESPONSES_ENDPOINT } from './responses';
 
 function memoryStorage(initial: Record<string, string> = {}) {
 	const values = new Map<string, string>(Object.entries(initial));
@@ -213,22 +215,16 @@ describe('createChatCompletion', () => {
 });
 
 describe('requestChatMessage', () => {
-	it('returns tool calls even when the content is null', async () => {
+	it('sends tool requests to the Responses API with reasoning on', async () => {
 		const fetchImpl = vi.fn(async () => ({
 			ok: true,
 			json: async () => ({
-				choices: [
+				output: [
 					{
-						message: {
-							content: null,
-							tool_calls: [
-								{
-									id: 'call_1',
-									type: 'function',
-									function: { name: 'list_documents', arguments: '{}' }
-								}
-							]
-						}
+						type: 'function_call',
+						call_id: 'call_1',
+						name: 'list_documents',
+						arguments: '{}'
 					}
 				]
 			})
@@ -247,63 +243,102 @@ describe('requestChatMessage', () => {
 			fetchImpl
 		});
 
-		expect(message).toEqual({
+		expect(message).toMatchObject({
 			role: 'assistant',
-			// A null content becomes an empty string so the message can be echoed
-			// back into the follow-up request unchanged.
 			content: '',
 			tool_calls: [
 				{ id: 'call_1', type: 'function', function: { name: 'list_documents', arguments: '{}' } }
 			]
 		});
 
-		const body = JSON.parse(
-			(fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string
-		);
-		expect(body.tools).toHaveLength(1);
+		const [url, init] = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+		expect(url).toBe(OPENAI_RESPONSES_ENDPOINT);
+
+		const body = JSON.parse((init as RequestInit).body as string);
+		// Reasoning stays on here — that is the whole point of using Responses for
+		// tool calls — and conversations are not stored server-side.
+		expect(body.reasoning).toEqual({ effort: TOOL_REASONING_EFFORT });
+		expect(body.store).toBe(false);
+		expect(body.tools).toEqual([
+			{
+				type: 'function',
+				name: 'list_documents',
+				description: 'list',
+				parameters: { type: 'object' }
+			}
+		]);
+		expect(body.input).toEqual([{ role: 'user', content: 'what do I have?' }]);
+		expect(body).not.toHaveProperty('messages');
 	});
 
-	it('disables reasoning when sending tools, and retries without it if rejected', async () => {
+	it('falls back to chat completions when Responses rejects the request', async () => {
+		const urls: string[] = [];
 		const bodies: Array<Record<string, unknown>> = [];
-		const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+		const fetchImpl = vi.fn(async (url: string, init: RequestInit) => {
+			urls.push(url);
 			bodies.push(JSON.parse(init.body as string));
 
-			if (bodies.length === 1) {
+			if (urls.length === 1) {
 				return {
 					ok: false,
 					status: 400,
-					json: async () => ({
-						error: { message: 'Unrecognized request argument supplied: reasoning_effort' }
-					})
+					json: async () => ({ error: { message: 'Unsupported parameter: reasoning' } })
 				};
 			}
 
 			return { ok: true, json: async () => ({ choices: [{ message: { content: 'done' } }] }) };
 		}) as unknown as typeof fetch;
 
-		const tools = [
-			{
-				type: 'function' as const,
-				function: { name: 'list_documents', description: 'list', parameters: { type: 'object' } }
-			}
-		];
-
 		const message = await requestChatMessage({
 			apiKey: 'sk-key',
-			model: 'gpt-5.6-luna',
-			messages: [],
-			tools,
+			model: 'legacy-model',
+			messages: [{ role: 'user', content: 'hi' }],
+			tools: [
+				{
+					type: 'function',
+					function: { name: 'list_documents', description: 'list', parameters: { type: 'object' } }
+				}
+			],
 			fetchImpl
 		});
 
 		expect(message.content).toBe('done');
-		// First attempt disables reasoning, as the API requires for function tools.
-		expect(bodies[0].reasoning_effort).toBe('none');
-		expect(bodies[1]).not.toHaveProperty('reasoning_effort');
-		expect(bodies[1].tools).toHaveLength(1);
+		expect(urls).toEqual([OPENAI_RESPONSES_ENDPOINT, OPENAI_ENDPOINT]);
+		// The fallback endpoint needs reasoning switched off to accept tools.
+		expect(bodies[1].reasoning_effort).toBe('none');
+		expect(bodies[1].messages).toEqual([{ role: 'user', content: 'hi' }]);
 	});
 
-	it('does not retry a 400 unrelated to reasoning_effort', async () => {
+	it('does not fall back on an auth or rate-limit failure', async () => {
+		const fetchImpl = vi.fn(async () => ({
+			ok: false,
+			status: 401,
+			json: async () => ({ error: { message: 'Invalid key' } })
+		})) as unknown as typeof fetch;
+
+		await expect(
+			requestChatMessage({
+				apiKey: 'sk-key',
+				model: 'gpt-5.6-luna',
+				messages: [],
+				tools: [
+					{
+						type: 'function',
+						function: {
+							name: 'list_documents',
+							description: 'list',
+							parameters: { type: 'object' }
+						}
+					}
+				],
+				fetchImpl
+			})
+		).rejects.toThrow('Invalid key');
+
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
+	});
+
+	it('surfaces the fallback error when both endpoints reject the request', async () => {
 		const fetchImpl = vi.fn(async () => ({
 			ok: false,
 			status: 400,
@@ -328,8 +363,27 @@ describe('requestChatMessage', () => {
 				fetchImpl
 			})
 		).rejects.toThrow('Invalid schema for function');
+		// The Responses failure that triggered the fallback stays visible.
+		await expect(
+			requestChatMessage({
+				apiKey: 'sk-key',
+				model: 'gpt-5.6-luna',
+				messages: [],
+				tools: [
+					{
+						type: 'function',
+						function: {
+							name: 'list_documents',
+							description: 'list',
+							parameters: { type: 'object' }
+						}
+					}
+				],
+				fetchImpl
+			})
+		).rejects.toThrow('after /v1/responses failed');
 
-		expect(fetchImpl).toHaveBeenCalledTimes(1);
+		expect(fetchImpl).toHaveBeenCalledTimes(4);
 	});
 
 	it('omits the tools field when no tools are passed', async () => {

@@ -69,7 +69,13 @@ export function sortHistory(entries: AiHistoryEntry[]): AiHistoryEntry[] {
 	return [...entries].sort((a, b) => a.createdAt - b.createdAt);
 }
 
-const STEP_STATUSES: readonly AgentStepStatus[] = ['done', 'invalid', 'unavailable', 'denied'];
+const STEP_STATUSES: readonly AgentStepStatus[] = [
+	'done',
+	'invalid',
+	'unavailable',
+	'denied',
+	'duplicate'
+];
 
 /**
  * Steps are validated element by element: the panel dereferences `status` and

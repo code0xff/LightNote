@@ -81,6 +81,7 @@
 	} from '$lib/ai/openai';
 	import { checkAiRequest } from '$lib/ai/actions';
 	import { runAgent, type AgentEvent, type AgentStep, type ApprovalRequest } from '$lib/ai/agent';
+	import type { ChatMessage } from '$lib/ai/openai';
 	import { createDocumentToolExecutor } from '$lib/ai/documentTools';
 	import { toolCallPreview } from '$lib/ai/tools';
 	import {
@@ -163,6 +164,11 @@
 	let aiRunId = 0;
 	/** Documents deleted this session: their history must not be recreated. */
 	const deletedHistoryKeys = new Set<string>();
+	/**
+	 * Transcript of a run that stopped early, so Continue can resume it instead of
+	 * starting over and redoing the work already recorded in it.
+	 */
+	let aiResume: { messages: ChatMessage[]; reason: 'max-steps' | 'stalled' } | null = null;
 
 	$: aiHasApiKey = Boolean(aiSettings.apiKey);
 
@@ -821,12 +827,20 @@
 		resolveAiApproval(false);
 	}
 
-	async function runAiAgentTask() {
+	function continueAiAgentTask() {
+		void runAiAgentTask(aiResume?.messages);
+	}
+
+	async function runAiAgentTask(priorMessages?: ChatMessage[]) {
+		// Continuing sends a neutral instruction rather than the textarea contents:
+		// resubmitting the original prompt invites the model to redo work that the
+		// transcript already records as done.
+		const instruction = priorMessages ? 'Continue.' : aiPrompt;
 		const check = checkAiRequest({
 			action: 'prompt',
 			hasApiKey: Boolean(aiSettings.apiKey),
 			selection: aiSelection,
-			prompt: aiPrompt
+			prompt: instruction
 		});
 
 		if (check.status !== 'ready') {
@@ -839,7 +853,7 @@
 		aiPendingApproval = null;
 
 		const runId = startAiRun();
-		const prompt = aiPrompt;
+		const prompt = instruction;
 		const selection = aiSelection;
 		// The document can change mid-run (create_document opens the new one), so
 		// the entry is written against the document the run started from.
@@ -853,6 +867,7 @@
 		try {
 			const run = await runAgent(prompt, {
 				settings: aiSettings,
+				priorMessages,
 				executeTool: createAiToolExecutor(),
 				requestApproval: requestAiApproval,
 				onEvent: (event) => {
@@ -874,8 +889,19 @@
 
 			runText = run.text;
 
-			if (run.stopReason === 'max-steps') {
-				runError = 'The agent stopped after reaching its step limit. Ask again to continue.';
+			if (run.stopReason === 'completed') {
+				// Only a finished run clears the continuation state; a failed attempt
+				// keeps the previous transcript, which is the only copy there is.
+				if (isCurrentAiRun(runId)) {
+					aiResume = null;
+				}
+			} else if (isCurrentAiRun(runId)) {
+				// Keep the transcript so Continue can pick up where this left off.
+				aiResume = { messages: run.messages, reason: run.stopReason };
+				runError =
+					run.stopReason === 'stalled'
+						? 'The agent stopped because it kept repeating the same step.'
+						: 'The agent stopped after reaching its step limit.';
 			}
 		} catch (error) {
 			runError = (error as Error)?.name === 'AbortError' ? 'Cancelled.' : '';
@@ -884,7 +910,12 @@
 				runError = error instanceof Error ? error.message : 'AI request failed';
 			}
 		} finally {
-			denyPendingApproval();
+			// Approval state is shared, so only the current run may deny it: a
+			// superseded run unwinding later would otherwise reject a newer prompt.
+			if (isCurrentAiRun(runId)) {
+				denyPendingApproval();
+			}
+
 			finishAiRun(runId);
 		}
 
@@ -1690,6 +1721,7 @@
 		bind:autoApprove={aiAutoApprove}
 		pendingApproval={aiPendingApproval}
 		history={aiHistory}
+		continueReason={aiResume?.reason ?? null}
 		onOpen={openAiPanel}
 		onClose={closeAiPanel}
 		onSaveKey={saveAiKeyFromPanel}
@@ -1703,5 +1735,6 @@
 		onOpenSettings={openAiSettings}
 		onDeleteHistoryEntry={deleteAiHistoryItem}
 		onClearHistory={clearAiHistoryForDocument}
+		onContinue={continueAiAgentTask}
 	/>
 {/if}

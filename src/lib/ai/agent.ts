@@ -3,10 +3,13 @@ import {
 	truncateContext,
 	truncateSelection,
 	type ChatMessage,
-	type OpenAiSettings
+	type OpenAiSettings,
+	type ToolResultMessage
 } from './openai';
+import { compressConversation } from './conversation';
 import {
 	describeToolCall,
+	isAiToolName,
 	isMutatingTool,
 	isToolAvailable,
 	listAvailableTools,
@@ -15,7 +18,19 @@ import {
 	type AiToolInvocation
 } from './tools';
 
-export const DEFAULT_AGENT_MAX_STEPS = 8;
+/**
+ * A generous ceiling rather than a working limit: stall detection ends a stuck
+ * run long before this, and the panel offers Continue when it is reached, so the
+ * cap only exists so a run can never be unbounded.
+ */
+export const DEFAULT_AGENT_MAX_STEPS = 24;
+
+/**
+ * Consecutive rounds whose every tool call repeats an earlier one before the run
+ * is treated as stuck. Repetition is the shape a real loop takes; a round count
+ * alone cannot tell progress from spinning.
+ */
+export const MAX_STALLED_ROUNDS = 2;
 
 /**
  * Tool calls executed from a single assistant message. One response can ask for
@@ -36,7 +51,9 @@ export type AgentStepStatus =
 	/** The tool is not usable in the current mode. */
 	| 'unavailable'
 	/** The user declined the mutating call. */
-	| 'denied';
+	| 'denied'
+	/** The identical change already succeeded, so it was not applied again. */
+	| 'duplicate';
 
 export type AgentStep = {
 	callId: string;
@@ -47,12 +64,14 @@ export type AgentStep = {
 	result: AgentToolResult;
 };
 
-export type AgentStopReason = 'completed' | 'max-steps';
+export type AgentStopReason = 'completed' | 'max-steps' | 'stalled';
 
 export type AgentRun = {
 	text: string;
 	steps: AgentStep[];
 	stopReason: AgentStopReason;
+	/** Full transcript, so a stopped run can be continued instead of restarted. */
+	messages: ChatMessage[];
 };
 
 export type ApprovalRequest = {
@@ -77,6 +96,10 @@ export type AgentDeps = {
 	selection?: string;
 	context?: string;
 	maxSteps?: number;
+	/** Rounds sent verbatim before older ones collapse into a ledger. */
+	recentRounds?: number;
+	/** Transcript of a stopped run to continue from, instead of starting over. */
+	priorMessages?: ChatMessage[];
 	signal?: AbortSignal;
 	fetchImpl?: typeof fetch;
 };
@@ -150,6 +173,44 @@ function abortError() {
 	return error;
 }
 
+function callSignature(name: string, rawArguments: string) {
+	return `${name}:${rawArguments}`;
+}
+
+/**
+ * Mutating calls that already succeeded in this conversation. Continuing a run
+ * replays its transcript, and a model that repeats an insert or a create would
+ * otherwise apply it twice — approval alone is a weak guard, because the prompt
+ * looks identical to the first one and session auto-approve skips it entirely.
+ */
+function collectAppliedMutations(messages: ChatMessage[]): Set<string> {
+	const applied = new Set<string>();
+
+	for (const [index, message] of messages.entries()) {
+		if (message.role !== 'assistant') {
+			continue;
+		}
+
+		for (const call of message.tool_calls ?? []) {
+			if (!isAiToolName(call.function.name) || !isMutatingTool(call.function.name)) {
+				continue;
+			}
+
+			const result = messages
+				.slice(index + 1)
+				.find((candidate) => candidate.role === 'tool' && candidate.tool_call_id === call.id) as
+				| ToolResultMessage
+				| undefined;
+
+			if (result && !/"ok"\s*:\s*false/.test(result.content)) {
+				applied.add(callSignature(call.function.name, call.function.arguments));
+			}
+		}
+	}
+
+	return applied;
+}
+
 function throwIfAborted(signal?: AbortSignal) {
 	if (signal?.aborted) {
 		throw abortError();
@@ -188,24 +249,50 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 	const tools = listAvailableTools({ isSharingMode });
 	const emit = (event: AgentEvent) => deps.onEvent?.(event);
 
-	const messages: ChatMessage[] = [
-		{
-			role: 'system',
-			content: buildAgentSystemPrompt({
-				isSharingMode,
-				hasSelection: Boolean(deps.selection?.trim())
-			})
-		},
-		{
-			role: 'user',
-			content: buildAgentUserMessage(instruction, {
-				selection: deps.selection,
-				context: deps.context
-			})
-		}
-	];
+	// Continuing keeps the stopped run's transcript and appends the new
+	// instruction, so the model does not redo work already recorded in it.
+	const messages: ChatMessage[] =
+		deps.priorMessages && deps.priorMessages.length > 0
+			? [
+					...deps.priorMessages,
+					{
+						role: 'user',
+						content: buildAgentUserMessage(instruction, {
+							selection: deps.selection,
+							context: deps.context
+						})
+					}
+				]
+			: [
+					{
+						role: 'system',
+						content: buildAgentSystemPrompt({
+							isSharingMode,
+							hasSelection: Boolean(deps.selection?.trim())
+						})
+					},
+					{
+						role: 'user',
+						content: buildAgentUserMessage(instruction, {
+							selection: deps.selection,
+							context: deps.context
+						})
+					}
+				];
 
 	const steps: AgentStep[] = [];
+	/** Call signatures seen so far, to tell progress from spinning. */
+	const seenCallSignatures = new Set<string>(
+		(deps.priorMessages ?? []).flatMap((message) =>
+			message.role === 'assistant'
+				? (message.tool_calls ?? []).map((call) =>
+						callSignature(call.function.name, call.function.arguments)
+					)
+				: []
+		)
+	);
+	const appliedMutations = collectAppliedMutations(deps.priorMessages ?? []);
+	let stalledRounds = 0;
 	let text = '';
 
 	for (let step = 0; step < maxSteps; step += 1) {
@@ -214,7 +301,9 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 		const message = await requestChatMessage({
 			apiKey: deps.settings.apiKey,
 			model: deps.settings.model,
-			messages,
+			// The full transcript is kept for the audit trail and for continuing;
+			// only what goes over the wire is compressed.
+			messages: compressConversation(messages, { recentRounds: deps.recentRounds }),
 			tools,
 			signal: deps.signal,
 			fetchImpl: deps.fetchImpl
@@ -232,53 +321,81 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 		if (calls.length === 0) {
 			emit({ type: 'done', stopReason: 'completed' });
 
-			return { text, steps, stopReason: 'completed' };
+			return { text, steps, stopReason: 'completed', messages };
 		}
 
-		for (const [callIndex, call] of calls.entries()) {
-			// Cancelling must stop the remaining calls of this batch too, not just
-			// the next request.
-			throwIfAborted(deps.signal);
+		/** Records a step and its matching tool message, keeping the pair intact. */
+		const record = (step: AgentStep) => {
+			steps.push(step);
+			emit({ type: 'step', step });
+			messages.push({
+				role: 'tool',
+				tool_call_id: step.callId,
+				content: stringifyToolResult(step.result)
+			});
+		};
 
-			if (callIndex >= MAX_TOOL_CALLS_PER_STEP) {
-				const skipped: AgentStep = {
+		// The cap is applied first: calls that will never run must not influence
+		// stall detection, and they still need a result so the transcript stays
+		// valid for a later Continue.
+		const executable = calls.slice(0, MAX_TOOL_CALLS_PER_STEP);
+
+		for (const call of calls.slice(MAX_TOOL_CALLS_PER_STEP)) {
+			record({
+				callId: call.id,
+				name: call.name,
+				description: call.name,
+				status: 'invalid',
+				result: {
+					ok: false,
+					error: `Too many tool calls in one turn (limit ${MAX_TOOL_CALLS_PER_STEP}). This call was not run; request it again in a later turn.`
+				}
+			});
+		}
+
+		// A round that only repeats earlier calls has made no progress. Reads are
+		// legitimately repeated after a write, so require several in a row.
+		const signatures = executable.map((call) => callSignature(call.name, call.rawArguments));
+		const allRepeated = signatures.every((signature) => seenCallSignatures.has(signature));
+
+		stalledRounds = allRepeated ? stalledRounds + 1 : 0;
+		signatures.forEach((signature) => seenCallSignatures.add(signature));
+
+		if (stalledRounds >= MAX_STALLED_ROUNDS) {
+			// Every pending call still gets a result: a transcript ending in an
+			// unanswered call would be rejected when the user continues the run.
+			for (const call of executable) {
+				record({
 					callId: call.id,
 					name: call.name,
 					description: call.name,
 					status: 'invalid',
 					result: {
 						ok: false,
-						error: `Too many tool calls in one turn (limit ${MAX_TOOL_CALLS_PER_STEP}). This call was not run; request it again in a later turn.`
+						error: 'Stopped: this call repeated an earlier one, so the run was making no progress.'
 					}
-				};
-
-				steps.push(skipped);
-				emit({ type: 'step', step: skipped });
-				messages.push({
-					role: 'tool',
-					tool_call_id: call.id,
-					content: stringifyToolResult(skipped.result)
 				});
-				continue;
 			}
+
+			emit({ type: 'done', stopReason: 'stalled' });
+
+			return { text, steps, stopReason: 'stalled', messages };
+		}
+
+		for (const call of executable) {
+			// Cancelling must stop the remaining calls of this batch too, not just
+			// the next request.
+			throwIfAborted(deps.signal);
 
 			const validation = validateToolCall(call.name, call.rawArguments);
 
 			if (validation.status === 'error') {
-				const failed: AgentStep = {
+				record({
 					callId: call.id,
 					name: call.name,
 					description: call.name,
 					status: 'invalid',
 					result: { ok: false, error: validation.message }
-				};
-
-				steps.push(failed);
-				emit({ type: 'step', step: failed });
-				messages.push({
-					role: 'tool',
-					tool_call_id: call.id,
-					content: stringifyToolResult(failed.result)
 				});
 				continue;
 			}
@@ -287,7 +404,7 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 			const description = describeToolCall(invocation);
 
 			if (!isToolAvailable(invocation.name, { isSharingMode })) {
-				const unavailable: AgentStep = {
+				record({
 					callId: call.id,
 					name: invocation.name,
 					description,
@@ -297,19 +414,29 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 						ok: false,
 						error: `${invocation.name} is not available while collaborating on a shared document`
 					}
-				};
-
-				steps.push(unavailable);
-				emit({ type: 'step', step: unavailable });
-				messages.push({
-					role: 'tool',
-					tool_call_id: call.id,
-					content: stringifyToolResult(unavailable.result)
 				});
 				continue;
 			}
 
 			if (isMutatingTool(invocation.name)) {
+				const signature = callSignature(call.name, call.rawArguments);
+
+				if (appliedMutations.has(signature)) {
+					record({
+						callId: call.id,
+						name: invocation.name,
+						description,
+						status: 'duplicate',
+						invocation,
+						result: {
+							ok: false,
+							error:
+								'This exact change was already applied in this run. It was not applied again; do something different or finish.'
+						}
+					});
+					continue;
+				}
+
 				const approved = deps.requestApproval
 					? await deps.requestApproval({ invocation, description })
 					: false;
@@ -319,21 +446,13 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 				throwIfAborted(deps.signal);
 
 				if (!approved) {
-					const denied: AgentStep = {
+					record({
 						callId: call.id,
 						name: invocation.name,
 						description,
 						status: 'denied',
 						invocation,
 						result: { ok: false, error: 'The user declined this change. Do not retry it.' }
-					};
-
-					steps.push(denied);
-					emit({ type: 'step', step: denied });
-					messages.push({
-						role: 'tool',
-						tool_call_id: call.id,
-						content: stringifyToolResult(denied.result)
 					});
 					continue;
 				}
@@ -342,26 +461,23 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 			emit({ type: 'tool-start', callId: call.id, description, invocation });
 
 			const result = await runTool(deps.executeTool, invocation);
-			const completed: AgentStep = {
+
+			if (result.ok && isMutatingTool(invocation.name)) {
+				appliedMutations.add(callSignature(call.name, call.rawArguments));
+			}
+
+			record({
 				callId: call.id,
 				name: invocation.name,
 				description,
 				status: 'done',
 				invocation,
 				result
-			};
-
-			steps.push(completed);
-			emit({ type: 'step', step: completed });
-			messages.push({
-				role: 'tool',
-				tool_call_id: call.id,
-				content: stringifyToolResult(result)
 			});
 		}
 	}
 
 	emit({ type: 'done', stopReason: 'max-steps' });
 
-	return { text, steps, stopReason: 'max-steps' };
+	return { text, steps, stopReason: 'max-steps', messages };
 }

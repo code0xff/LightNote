@@ -1,4 +1,10 @@
 import { escapeHtml } from '$lib/utils';
+import {
+	OPENAI_RESPONSES_ENDPOINT,
+	parseResponsesMessage,
+	toResponsesInput,
+	toResponsesTools
+} from './responses';
 
 export const OPENAI_SETTINGS_KEY = 'openai';
 
@@ -41,6 +47,14 @@ export type AssistantMessage = {
 	role: 'assistant';
 	content: string;
 	tool_calls?: ToolCall[];
+	/**
+	 * The Responses output items exactly as they came back, in order. With
+	 * `store: false` the whole conversation is replayed by us, and the API requires
+	 * every output item — including reasoning items — to be sent back on later
+	 * turns; reconstructing "text, then calls" would drop them. Internal only:
+	 * stripped before anything is sent to `/v1/chat/completions`.
+	 */
+	output_items?: unknown[];
 };
 
 export type ToolResultMessage = {
@@ -330,66 +344,129 @@ export type CompletionParams = {
 };
 
 /**
- * Current GPT-5 models refuse function tools on `/v1/chat/completions` unless
- * reasoning is switched off: "Function tools with reasoning_effort are not
- * supported ... set reasoning_effort to 'none'". Only sent alongside `tools`, so
- * plain Ask requests keep exactly the shape they had before.
+ * `/v1/chat/completions` refuses function tools unless reasoning is off, so
+ * tool-carrying requests go to `/v1/responses`, where reasoning and tools work
+ * together. This is the effort used there: low keeps the planning benefit without
+ * paying for deep reasoning on every step of an agent loop.
  */
-const TOOL_REASONING_EFFORT = 'none';
+export const TOOL_REASONING_EFFORT = 'low';
+
+/** The effort `/v1/chat/completions` demands when tools are present. */
+const CHAT_TOOL_REASONING_EFFORT = 'none';
 
 /**
- * Single chat-completion round trip returning the raw assistant message, so
- * callers can act on `tool_calls` as well as text. `temperature` is
- * intentionally not sent (current GPT-5 models reject non-default values).
+ * Drops fields that only exist for the Responses replay, so the
+ * chat-completions endpoint never sees an unrecognized message property.
  */
-export async function requestChatMessage({
-	apiKey,
-	model,
-	messages,
-	tools,
-	signal,
-	fetchImpl = fetch
-}: CompletionParams): Promise<AssistantMessage> {
-	const key = apiKey.trim();
+function toChatMessages(messages: ChatMessage[]): ChatMessage[] {
+	return messages.map((message) => {
+		if (message.role !== 'assistant' || !message.output_items) {
+			return message;
+		}
+
+		const rest = { ...message };
+
+		delete rest.output_items;
+
+		return rest;
+	});
+}
+
+function authHeaders(key: string) {
+	return {
+		'Content-Type': 'application/json',
+		Authorization: `Bearer ${key}`
+	};
+}
+
+/**
+ * Tool-calling round trip over the Responses API, falling back to
+ * chat-completions when that endpoint rejects the request shape or the model.
+ * Model names are free-form (`resolveModelOptions` allows unknown ones), so one
+ * endpoint difference must not fail a whole agent run.
+ */
+async function requestToolMessage(
+	key: string,
+	{ model, messages, tools, signal, fetchImpl = fetch }: CompletionParams
+): Promise<AssistantMessage> {
+	const response = await fetchImpl(OPENAI_RESPONSES_ENDPOINT, {
+		method: 'POST',
+		headers: authHeaders(key),
+		body: JSON.stringify({
+			model,
+			input: toResponsesInput(messages),
+			tools: toResponsesTools(tools ?? []),
+			reasoning: { effort: TOOL_REASONING_EFFORT },
+			// This is a bring-your-own-key app: do not leave conversations stored
+			// server-side, and never rely on `previous_response_id`.
+			store: false
+		}),
+		signal
+	});
+
+	if (response.ok) {
+		return parseResponsesMessage(await response.json());
+	}
+
+	const responsesError = await extractErrorMessage(response);
+
+	// Only a shape or model problem is worth retrying elsewhere; auth, rate-limit
+	// and server errors would fail the same way twice.
+	if (response.status !== 400 && response.status !== 404) {
+		throw new Error(responsesError);
+	}
+
+	const fallback = await fetchImpl(OPENAI_ENDPOINT, {
+		method: 'POST',
+		headers: authHeaders(key),
+		body: JSON.stringify({
+			model,
+			messages: toChatMessages(messages),
+			tools,
+			reasoning_effort: CHAT_TOOL_REASONING_EFFORT
+		}),
+		signal
+	});
+
+	if (!fallback.ok) {
+		// Both attempts failed: report each, or the Responses failure that started
+		// the fallback would be invisible while debugging.
+		throw new Error(
+			`${await extractErrorMessage(fallback)} (after /v1/responses failed: ${responsesError})`
+		);
+	}
+
+	return parseAssistantMessage(await fallback.json());
+}
+
+/**
+ * Single round trip returning the raw assistant message, so callers can act on
+ * `tool_calls` as well as text. Text-only requests keep using
+ * `/v1/chat/completions` with exactly the body they had before; only requests
+ * carrying tools take the Responses path. `temperature` is intentionally not sent
+ * (current GPT-5 models reject non-default values).
+ */
+export async function requestChatMessage(params: CompletionParams): Promise<AssistantMessage> {
+	const key = params.apiKey.trim();
 
 	if (!key) {
 		throw new Error('OpenAI API key is not set. Add it in AI settings.');
 	}
 
-	const hasTools = Boolean(tools && tools.length > 0);
-	const send = (withReasoningEffort: boolean) =>
-		fetchImpl(OPENAI_ENDPOINT, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${key}`
-			},
-			body: JSON.stringify({
-				model,
-				messages,
-				...(hasTools ? { tools } : {}),
-				...(hasTools && withReasoningEffort ? { reasoning_effort: TOOL_REASONING_EFFORT } : {})
-			}),
-			signal
-		});
+	if (params.tools && params.tools.length > 0) {
+		return requestToolMessage(key, params);
+	}
 
-	let response = await send(true);
+	const { model, messages, signal, fetchImpl = fetch } = params;
+	const response = await fetchImpl(OPENAI_ENDPOINT, {
+		method: 'POST',
+		headers: authHeaders(key),
+		body: JSON.stringify({ model, messages: toChatMessages(messages) }),
+		signal
+	});
 
 	if (!response.ok) {
-		const message = await extractErrorMessage(response);
-
-		// The user can name any model (`resolveModelOptions` allows unknown ones),
-		// and some reject the field itself. Retry once without it rather than
-		// failing a whole agent run over a request-shape difference.
-		if (!hasTools || response.status !== 400 || !/reasoning_effort/i.test(message)) {
-			throw new Error(message);
-		}
-
-		response = await send(false);
-
-		if (!response.ok) {
-			throw new Error(await extractErrorMessage(response));
-		}
+		throw new Error(await extractErrorMessage(response));
 	}
 
 	return parseAssistantMessage(await response.json());

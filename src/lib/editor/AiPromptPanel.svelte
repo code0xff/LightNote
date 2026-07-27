@@ -31,6 +31,8 @@
 	export let autoApprove = false;
 	export let pendingApproval: { description: string; preview?: string } | null = null;
 	export let history: AiHistoryEntry[] = [];
+	/** Set when the last run stopped early and can be resumed. */
+	export let continueReason: 'max-steps' | 'stalled' | null = null;
 	export let onOpen: () => void;
 	export let onClose: () => void;
 	export let onSaveKey: () => void;
@@ -44,6 +46,9 @@
 	export let onOpenSettings: () => void;
 	export let onDeleteHistoryEntry: (id: string) => void;
 	export let onClearHistory: () => void;
+	export let onContinue: () => void;
+
+	const MODE_LABELS = { ask: 'Ask', agent: 'Agent' } as const;
 
 	const ACTION_LABELS: Record<AiAction, string> = {
 		rewrite: 'Rewrite',
@@ -61,6 +66,8 @@
 	}
 
 	$: hasLiveRun = busy || steps.length > 0 || Boolean(agentText);
+
+	$: canContinue = mode === 'agent' && continueReason !== null;
 
 	function send() {
 		if (busy || !prompt.trim()) {
@@ -91,10 +98,10 @@
 
 	function entryBadge(entry: AiHistoryEntry) {
 		if (entry.mode === 'agent') {
-			return 'Agent';
+			return MODE_LABELS.agent;
 		}
 
-		return entry.action ? ACTION_LABELS[entry.action] : 'Ask';
+		return entry.action ? ACTION_LABELS[entry.action] : MODE_LABELS.ask;
 	}
 
 	function entryLabel(entry: AiHistoryEntry) {
@@ -359,6 +366,12 @@
 						</button>
 					</div>
 
+					<p class="text-xs text-muted-foreground">
+						{mode === 'agent'
+							? 'Reads your documents and, with your approval, creates and edits them.'
+							: 'Returns text for you to insert — nothing changes until you apply it.'}
+					</p>
+
 					{#if selection}
 						<div class="grid gap-2">
 							<div class="flex items-center justify-between">
@@ -447,6 +460,19 @@
 
 					{#if error}
 						<div class="text-sm text-destructive">{error}</div>
+					{/if}
+
+					{#if canContinue && !busy}
+						<div
+							class="flex items-center justify-between gap-2 rounded-md border border-border p-2"
+						>
+							<span class="text-xs text-muted-foreground">
+								{continueReason === 'stalled'
+									? 'Stopped: the agent kept repeating itself.'
+									: 'Stopped at the step limit.'}
+							</span>
+							<Button variant="secondary" class="h-7 px-3" on:click={onContinue}>Continue</Button>
+						</div>
 					{/if}
 
 					<div class="grid gap-2">
