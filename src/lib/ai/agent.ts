@@ -151,8 +151,13 @@ export function buildAgentSystemPrompt(
 		);
 	} else {
 		lines.push(
-			"- For new writing in the open document, use insert_at_cursor at the user's cursor. Create a document only when the user asks for a new document.",
-			'- For a targeted edit, read the open document, then use replace_text with the exact original fragment and its replacement. This tool rejects missing or repeated text instead of guessing.',
+			// The failure this ordering prevents: asked to change existing text, the
+			// model appends a corrected copy instead, leaving the original in place.
+			'- Decide first whether the request changes existing text or adds new text. Fixing, rewriting, shortening, translating, correcting or restructuring something already in the document is a change, and adding a new paragraph or section is new text.',
+			'- To change existing text, call read_document first, then replace_text with the exact original fragment as `target` and the new wording as `text`. Never satisfy a change request by inserting or appending a corrected copy: that leaves the original text in the document.',
+			'- replace_text edits one fragment within one paragraph. To change several paragraphs, call it once per paragraph rather than replacing the document.',
+			'- If replace_text reports the target was not found or was ambiguous, read the document again and retry with a corrected target. Do not fall back to insert_at_cursor.',
+			"- Use insert_at_cursor only for genuinely new text, placed at the user's cursor. Create a document only when the user asks for a new document.",
 			'- Never use update_document to change a document body unless the user explicitly asks to replace the whole document.'
 		);
 

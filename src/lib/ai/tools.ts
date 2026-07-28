@@ -121,7 +121,7 @@ export const AI_TOOLS: ToolDefinition[] = [
 		function: {
 			name: 'insert_at_cursor',
 			description:
-				'Insert text into the open document at the cursor. Prefer this over update_document for the open document because it stays undoable.',
+				'Insert new text into the open document at the cursor. Use this only for content that is not in the document yet — to change existing text use replace_text, because inserting leaves the original text in place.',
 			parameters: {
 				type: 'object',
 				properties: { text: { type: 'string', description: TEXT_ARGUMENT_DESCRIPTION } },

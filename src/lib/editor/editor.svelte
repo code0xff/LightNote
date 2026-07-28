@@ -1584,6 +1584,17 @@
 				onTransaction: () => {
 					// force re-render so `editor.isActive` works as expected
 					editor = editor;
+				},
+				// The panel captures the selection when it opens, but the user often
+				// opens it first and selects afterwards; without this the selection is
+				// silently missing and the request loses its scope. A run in flight owns
+				// the captured range, so recapturing then would move its target.
+				onSelectionUpdate: () => {
+					if (!aiOpen || aiBusy || aiPendingApproval) {
+						return;
+					}
+
+					captureSelection();
 				}
 			});
 			editor.commands.focus();

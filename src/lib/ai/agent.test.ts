@@ -110,6 +110,17 @@ describe('agent prompts', () => {
 		expect(sharing).toContain('replace_selection will fail');
 	});
 
+	// The observed failure: asked to fix existing text, the agent appended a
+	// corrected copy and left the original in the document.
+	it('routes a change to existing text through replace_text, not an insert', () => {
+		const prompt = buildAgentSystemPrompt();
+
+		expect(prompt).toContain('read_document first, then replace_text');
+		expect(prompt).toContain('leaves the original text in the document');
+		expect(prompt).toContain('Do not fall back to insert_at_cursor');
+		expect(prompt).toContain('insert_at_cursor only for genuinely new text');
+	});
+
 	it('keeps an agent with a selection inside that selection', () => {
 		const prompt = buildAgentSystemPrompt({ hasSelection: true, selectionOnly: true });
 
