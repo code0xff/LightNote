@@ -86,7 +86,7 @@ function nodeToPlainText(node: JSONContent): string {
 function htmlToPlainText(html: string): string {
 	return html
 		.replace(/<br\s*\/?>/gi, '\n')
-		.replace(/<\/(p|h[1-6]|li|blockquote|pre|div|tr)>/gi, '\n\n')
+		.replace(/<\/(p|h[1-6]|li|blockquote|pre|div|tr|td|th)>/gi, '\n\n')
 		.replace(/<[^>]*>/g, '')
 		.replace(/&nbsp;/gi, ' ')
 		.replace(/&lt;/g, '<')

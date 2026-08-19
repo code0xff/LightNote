@@ -116,6 +116,14 @@ describe('text and content conversion', () => {
 		);
 	});
 
+	it('keeps bare HTML table cells separate when reading legacy content', () => {
+		expect(
+			documentToPlainText(
+				'<table><tr><th>Name</th><th>Qty</th></tr><tr><td>Tea</td><td>2</td></tr></table>'
+			)
+		).toBe('Name\n\nQty\n\nTea\n\n2');
+	});
+
 	it('appends in the format the document already uses', () => {
 		expect(
 			appendToContent(document({ content: '<p>old</p>', contentFormat: 'html' }), 'new\nline')

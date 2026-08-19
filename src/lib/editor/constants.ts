@@ -41,6 +41,21 @@ export const defaultContent = `
 <blockquote>
   <p>block quote</p>
 </blockquote>
+<p>Tables are inserted from the toolbar. With the cursor inside a table, the toolbar shows buttons for adding or
+  deleting rows and columns, toggling the header row, merging cells, and deleting the table. Columns can also be resized
+  by dragging a cell border.</p>
+<table>
+  <tbody>
+    <tr>
+      <th><p>Header</p></th>
+      <th><p>Header</p></th>
+    </tr>
+    <tr>
+      <td><p>cell</p></td>
+      <td><p>cell</p></td>
+    </tr>
+  </tbody>
+</table>
 <p><code>---</code>:</p>
 <hr>
 <p><code>cmd+z or ctrl+z</code>: undo</p>
@@ -204,6 +219,35 @@ export const htmlStyle = `
     a:hover {
       text-decoration: underline;
       cursor: pointer;
+    }
+
+    /* Column widths are an editor-only concept (prosemirror-tables keeps them in
+       a colgroup that getHTML does not emit), so the export lets the browser size
+       columns to their content instead of forcing the editor's fixed layout. */
+    table {
+      border-collapse: collapse;
+      margin: 1em 0;
+      width: 100%;
+    }
+
+    td,
+    th {
+      border: 1px solid #d1d5db;
+      box-sizing: border-box;
+      padding: 0.375rem 0.5rem;
+      vertical-align: top;
+    }
+
+    td > *,
+    th > * {
+      margin-bottom: 0;
+      margin-top: 0;
+    }
+
+    th {
+      background-color: rgba(97, 97, 97, 0.1);
+      font-weight: bold;
+      text-align: left;
     }
 
     p.is-editor-empty:first-child::before {

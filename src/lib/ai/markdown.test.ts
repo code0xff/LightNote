@@ -128,6 +128,130 @@ describe('parseMarkdownBlocks', () => {
 		expect(blocks.map((block) => block.type)).toEqual(['paragraph', 'bulletList']);
 	});
 
+	it('parses a pipe table with a header row', () => {
+		const blocks = parseMarkdownBlocks('| Name | Qty |\n| --- | ---: |\n| **Tea** | 2 |');
+
+		expect(blocks).toEqual([
+			{
+				type: 'table',
+				content: [
+					{
+						type: 'tableRow',
+						content: [
+							{
+								type: 'tableHeader',
+								content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Name' }] }]
+							},
+							{
+								type: 'tableHeader',
+								content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Qty' }] }]
+							}
+						]
+					},
+					{
+						type: 'tableRow',
+						content: [
+							{
+								type: 'tableCell',
+								content: [
+									{
+										type: 'paragraph',
+										content: [{ type: 'text', text: 'Tea', marks: [{ type: 'bold' }] }]
+									}
+								]
+							},
+							{
+								type: 'tableCell',
+								content: [{ type: 'paragraph', content: [{ type: 'text', text: '2' }] }]
+							}
+						]
+					}
+				]
+			}
+		]);
+	});
+
+	it('squares rows off against the header and keeps escaped pipes', () => {
+		const blocks = parseMarkdownBlocks('a | b\n--- | ---\n1\\|2\n1 | 2 | 3');
+		const rows = blocks[0].content ?? [];
+
+		expect(blocks[0].type).toBe('table');
+		expect(rows.map((row) => (row.content ?? []).length)).toEqual([2, 2, 2]);
+		expect(rows[1].content?.[0]).toEqual({
+			type: 'tableCell',
+			content: [{ type: 'paragraph', content: [{ type: 'text', text: '1|2' }] }]
+		});
+		expect(rows[1].content?.[1]).toEqual({
+			type: 'tableCell',
+			content: [{ type: 'paragraph' }]
+		});
+	});
+
+	it('needs a matching delimiter row to read pipes as a table', () => {
+		expect(parseMarkdownBlocks('| a | b |').map((block) => block.type)).toEqual(['paragraph']);
+		expect(parseMarkdownBlocks('| a | b |\n| --- |').map((block) => block.type)).toEqual([
+			'paragraph'
+		]);
+	});
+
+	it('keeps short body rows and ends before a new block', () => {
+		const blocks = parseMarkdownBlocks(
+			'Intro\n| a | b |\n| --- | --- |\n| 1 | 2 |\nAfter\n\n> quote | text'
+		);
+
+		expect(blocks.map((block) => block.type)).toEqual(['paragraph', 'table', 'blockquote']);
+		expect(blocks[1].content).toHaveLength(3);
+		expect(blocks[1].content?.[2]).toEqual({
+			type: 'tableRow',
+			content: [
+				{
+					type: 'tableCell',
+					content: [{ type: 'paragraph', content: [{ type: 'text', text: 'After' }] }]
+				},
+				{ type: 'tableCell', content: [{ type: 'paragraph' }] }
+			]
+		});
+	});
+
+	it('does not absorb adjacent list, quote, or heading blocks', () => {
+		for (const [line, type] of [
+			['- item | text', 'bulletList'],
+			['1. item | text', 'orderedList'],
+			['> quote | text', 'blockquote'],
+			['# heading | text', 'heading']
+		] as const) {
+			expect(
+				parseMarkdownBlocks(`| a | b |\n| --- | --- |\n${line}`).map((block) => block.type)
+			).toEqual(['table', type]);
+		}
+	});
+
+	it('does not mistake a list or quote header for a table', () => {
+		expect(parseMarkdownBlocks('> a | b\n--- | ---').map((block) => block.type)).toEqual([
+			'blockquote',
+			'paragraph'
+		]);
+		expect(parseMarkdownBlocks('- a | b\n--- | ---').map((block) => block.type)).toEqual([
+			'bulletList',
+			'paragraph'
+		]);
+	});
+
+	it('treats an even backslash run before a pipe as a separator', () => {
+		const blocks = parseMarkdownBlocks('a | b\n--- | ---\nleft\\\\|right | x');
+
+		expect(blocks[0].content?.[1].content).toEqual([
+			{
+				type: 'tableCell',
+				content: [{ type: 'paragraph', content: [{ type: 'text', text: 'left\\' }] }]
+			},
+			{
+				type: 'tableCell',
+				content: [{ type: 'paragraph', content: [{ type: 'text', text: 'right' }] }]
+			}
+		]);
+	});
+
 	it('always yields a non-empty document', () => {
 		expect(markdownToDocument('   ')).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
 	});
@@ -148,6 +272,12 @@ describe('markdownToHtml', () => {
 		expect(markdownToHtml('---')).toBe('<hr>');
 		expect(markdownToHtml('```js\nvar x = "<a>";\n```')).toBe(
 			'<pre><code class="language-js">var x = &quot;&lt;a&gt;&quot;;</code></pre>'
+		);
+	});
+
+	it('serializes tables as header and body cells', () => {
+		expect(markdownToHtml('| a | b |\n| --- | --- |\n| <x> | |')).toBe(
+			'<table><tbody><tr><th><p>a</p></th><th><p>b</p></th></tr><tr><td><p>&lt;x&gt;</p></td><td><p></p></td></tr></tbody></table>'
 		);
 	});
 

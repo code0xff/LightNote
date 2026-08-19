@@ -9,11 +9,15 @@
 		AlignCenter,
 		AlignLeft,
 		AlignRight,
+		BetweenHorizontalEnd,
+		BetweenVerticalEnd,
 		Bold,
 		BookPlus,
 		Braces,
 		Code,
 		FileUp,
+		FoldHorizontal,
+		FoldVertical,
 		Heading1,
 		Heading2,
 		Heading3,
@@ -23,7 +27,9 @@
 		Link2Off,
 		List,
 		ListOrdered,
+		Merge,
 		MoreHorizontal,
+		PanelTop,
 		Pencil,
 		Pilcrow,
 		Redo,
@@ -34,6 +40,7 @@
 		SeparatorHorizontal,
 		Strikethrough,
 		SunMoon,
+		Table,
 		TextQuote,
 		Undo,
 		ScreenShare,
@@ -46,7 +53,9 @@
 		addYoutube,
 		buildShareUrl,
 		download,
+		DEFAULT_TABLE_SIZE,
 		endSharing,
+		insertTable,
 		readUploadedDocument,
 		readSharedDocumentHistory,
 		readSharedMetadata,
@@ -457,6 +466,14 @@
 	 */
 	function captureSelection() {
 		if (!editor) {
+			clearAiSelection();
+			return;
+		}
+
+		// A table CellSelection has one range per selected cell. Treating its
+		// aggregate `from`/`to` as one text range would silently target only one
+		// cell, so leave it unscoped until the user places a normal cursor/selection.
+		if (editor.state.selection.ranges.length > 1) {
 			clearAiSelection();
 			return;
 		}
@@ -876,6 +893,10 @@
 				// A captured selection makes the run selection-scoped, which removes this
 				// tool, so the live cursor is the only position it can ever insert at.
 				insertAtCursor: (nodes) => {
+					if (editor.state.selection.ranges.length > 1) {
+						throw new Error('Place the cursor in one table cell before inserting text.');
+					}
+
 					const at = clampToDocument(editor.state.selection.to);
 
 					editor.chain().focus().insertContentAt(at, nodes).run();
@@ -1364,9 +1385,76 @@
 						label: 'Insert YouTube video',
 						icon: MonitorPlay,
 						onClick: () => addYoutube(activeEditor)
+					},
+					{
+						key: 'table',
+						label: 'Insert table',
+						icon: Table,
+						onClick: () => insertTable(activeEditor),
+						disabled: !activeEditor.can().chain().focus().insertTable(DEFAULT_TABLE_SIZE).run()
 					}
 				]
 			},
+			// Row/column tools only make sense with the cursor inside a table, and
+			// the bar is crowded enough without eight permanently dead buttons.
+			...(activeEditor.isActive('table')
+				? [
+						{
+							id: 'table-edit',
+							label: 'Table',
+							items: [
+								{
+									key: 'add-row',
+									label: 'Add row below',
+									icon: BetweenHorizontalEnd,
+									onClick: () => activeEditor.chain().focus().addRowAfter().run(),
+									disabled: !activeEditor.can().chain().focus().addRowAfter().run()
+								},
+								{
+									key: 'delete-row',
+									label: 'Delete row',
+									icon: FoldVertical,
+									onClick: () => activeEditor.chain().focus().deleteRow().run(),
+									disabled: !activeEditor.can().chain().focus().deleteRow().run()
+								},
+								{
+									key: 'add-column',
+									label: 'Add column right',
+									icon: BetweenVerticalEnd,
+									onClick: () => activeEditor.chain().focus().addColumnAfter().run(),
+									disabled: !activeEditor.can().chain().focus().addColumnAfter().run()
+								},
+								{
+									key: 'delete-column',
+									label: 'Delete column',
+									icon: FoldHorizontal,
+									onClick: () => activeEditor.chain().focus().deleteColumn().run(),
+									disabled: !activeEditor.can().chain().focus().deleteColumn().run()
+								},
+								{
+									key: 'header-row',
+									label: 'Toggle header row',
+									icon: PanelTop,
+									onClick: () => activeEditor.chain().focus().toggleHeaderRow().run(),
+									disabled: !activeEditor.can().chain().focus().toggleHeaderRow().run()
+								},
+								{
+									key: 'merge-cells',
+									label: 'Merge or split cells',
+									icon: Merge,
+									onClick: () => activeEditor.chain().focus().mergeOrSplit().run(),
+									disabled: !activeEditor.can().chain().focus().mergeOrSplit().run()
+								},
+								{
+									key: 'delete-table',
+									label: 'Delete table',
+									icon: Trash2,
+									onClick: () => activeEditor.chain().focus().deleteTable().run()
+								}
+							]
+						}
+					]
+				: []),
 			{
 				id: 'history',
 				label: 'History',

@@ -329,3 +329,14 @@ export function addYoutube(editor: Editor) {
 		height: 480
 	});
 }
+
+/** Table inserted by the toolbar: a header row plus two body rows. */
+export const DEFAULT_TABLE_SIZE = { rows: 3, cols: 3, withHeaderRow: true } as const;
+
+export function insertTable(editor: Editor) {
+	editor
+		.chain()
+		.focus()
+		.insertTable({ ...DEFAULT_TABLE_SIZE })
+		.run();
+}
