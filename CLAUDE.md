@@ -58,7 +58,7 @@ Two layout details keep the title aligned with the text under it:
 
 - `documentColumnClass` (`editor/constants.ts`) is shared by the title block's `class` and the editor body's Tiptap `editorProps` class. They are styled in different files, so a copied value would drift and the title would sit off-centre from its own paragraphs.
 - The top clearance for the fixed nav/aside lives on `.editor-shell` (`pt-40 lg:pt-16`), not on the editor body, because the title block now occupies that space and sharing mode swaps the input for static text.
-- `styles.scss` narrows **both** `.tiptap` and `.document-title` when the AI panel is open; listing only one of them misaligns the title as soon as the panel opens.
+- **One mechanism owns horizontal placement**: `.editor-shell` padding. The shell clears the fixed sidebar (`padding-left: 18rem` from `lg`) and the AI panel (`padding-right`), while the column inside it only centres itself. Do not reintroduce a margin on `.tiptap`/`.document-title` for either offset — that split is what made closing the panel throw the text far right and snap back: the margin override disappeared with the class while the shell's padding was still animating through its 180ms transition, so the two offsets briefly stacked.
 
 In sharing mode there is no local document row to rename, so the block shows the workspace name as static text.
 

@@ -2,7 +2,10 @@
 	--ai-panel-width: 24rem;
 }
 
-/* Make room for the right-side AI panel so it never covers the text.
+/* The shell owns every horizontal offset: the fixed sidebar on the left and the
+   AI panel on the right. The document column inside it only centres itself
+   (`documentColumnClass`), so opening or closing the panel changes exactly one
+   animating property and the text slides instead of jumping.
    Below `sm` the panel is a full-width overlay, so no reflow is needed. */
 .editor-shell {
 	transition: padding 180ms ease;
@@ -10,20 +13,18 @@
 
 @media (min-width: 640px) {
 	.editor-shell.ai-panel-open {
-		padding-right: calc(var(--ai-panel-width) + 1rem);
 		padding-left: 1rem;
-	}
-
-	/* The title block shares the editor's column, so it has to narrow with it. */
-	.editor-shell.ai-panel-open .tiptap,
-	.editor-shell.ai-panel-open .document-title {
-		width: min(708px, 100%);
-		margin-left: auto;
-		margin-right: auto;
+		padding-right: calc(var(--ai-panel-width) + 1rem);
 	}
 }
 
 @media (min-width: 1024px) {
+	/* Clears the sidebar, which is fixed and 18rem wide from `lg` up. */
+	.editor-shell {
+		padding-left: 18rem;
+	}
+
+	/* Same specificity as the rule above, so this has to stay after it. */
 	.editor-shell.ai-panel-open {
 		padding-left: calc(18rem + 1rem);
 	}

@@ -3,9 +3,14 @@
  * stay aligned. Kept as one string because the two elements are styled in
  * different places (a Svelte class attribute and Tiptap's `editorProps`), and
  * drifting values would misalign the title from the text under it.
+ *
+ * The column only centres itself; every horizontal offset (the fixed sidebar,
+ * the AI panel) is padding on `.editor-shell`. Splitting that job between a
+ * margin here and padding there is what made closing the panel throw the text
+ * to the right and snap back: the margin changed instantly while the padding
+ * was still animating.
  */
-export const documentColumnClass =
-	'md:mx-auto md:w-[708px] md:px-0 lg:ml-[calc(18rem+(100vw-18rem-708px)/2)]';
+export const documentColumnClass = 'md:mx-auto md:w-[min(708px,100%)] md:px-0';
 
 export const defaultContent = `
 <h1>LightNote</h1>
