@@ -39,7 +39,7 @@ LightNote is an **offline-first, client-only** note editor. There is **no backen
 
 ### Editor is the whole app
 
-`src/routes/+page.svelte` renders a single component, `src/lib/editor/editor.svelte`, which contains the toolbar, sidebar/document list, bubble menu, dialogs, and the Tiptap editor instance. This is a large stateful component and the primary file to touch for UI changes.
+`src/routes/+page.svelte` renders a single component, `src/lib/editor/editor.svelte`, which contains the toolbar, sidebar/document list, bubble menus, dialogs, and the Tiptap editor instance. This is a large stateful component and the primary file to touch for UI changes.
 
 The editor decides its **runtime mode once, in `onMount`**, based on URL query params:
 
@@ -50,7 +50,8 @@ The editor decides its **runtime mode once, in `onMount`**, based on URL query p
 
 Testable logic is deliberately extracted out of Svelte components into plain `.ts` modules so it can be unit-tested with vitest; the `.svelte` components themselves are not tested. Follow this pattern when adding features:
 
-- `editor/editor.ts` — pure helpers (HTML import/export, share URL building/validation, upload validation, link/image/YouTube insertion).
+- `editor/editor.ts` — pure helpers (HTML import/export, share URL building/validation, upload validation, link/image/YouTube/table insertion).
+- `editor/toolbar.ts` — the toolbar data model (see below).
 - `documents/store.ts` — all IndexedDB access.
 - `ai/openai.ts` — all OpenAI settings/prompt/request/response logic.
 - `ai/tools.ts` / `ai/agent.ts` / `ai/documentTools.ts` — the agent tool layer (see below).
@@ -105,11 +106,19 @@ The "approve automatically for this session" checkbox is a deliberate opt-out of
 
 ### Tables
 
-Tables are Tiptap's `Table`/`TableRow`/`TableHeader`/`TableCell` (resizable columns), registered in `getExtensions()` so both normal and sharing mode get them. `insertTable` in `editor/editor.ts` owns the default shape (`DEFAULT_TABLE_SIZE`, 3×3 with a header row); the row/column/merge buttons are a **conditional toolbar group** that `buildToolbarGroups` only emits while `isActive('table')`, so the bar is not lined with permanently disabled buttons.
+Tables are Tiptap's `Table`/`TableRow`/`TableHeader`/`TableCell` (resizable columns), registered in `getExtensions()` so both normal and sharing mode get them. `insertTable` in `editor/editor.ts` owns the default shape (`DEFAULT_TABLE_SIZE`, 3×3 with a header row), and the row/column/header/merge tools live in the **table bubble menu**, not the toolbar (see below).
 
 Table CSS lives in **two places that must stay in sync**: `editor/styles.scss` for the editor (including the `.selectedCell`/`.column-resize-handle` elements prosemirror-tables injects, and the `.resize-cursor` class its column-resizing plugin puts on the editor element itself, which is why that rule sits outside the `.tiptap` block) and the `htmlStyle` stylesheet in `editor/constants.ts` for exported/downloaded HTML. A table that looks right in the editor but unstyled in the export means only the first was updated. The two deliberately differ on one point: the editor uses `table-layout: fixed` because resizing needs the colgroup widths, while the export omits it, since `getHTML` does not emit those widths and content-sized columns read better without them.
 
-A table cell selection is a `CellSelection`, whose `ranges` hold one entry per cell. `captureSelection` treats that as _no_ selection and `insertAtCursor` refuses it, because collapsing those ranges into a single `from`/`to` would let an AI replacement silently overwrite table structure between the selected cells.
+A table cell selection is a `CellSelection`. `captureSelection` treats it as _no_ selection and `insertAtCursor` refuses it, because its `from`/`to` span the table structure between the selected cells, so writing over that range would delete rows and cells. Detection goes through `isCellSelection` in `editor/editor.ts` (an `instanceof CellSelection` check, shared with the bubble menus): **counting `ranges` does not work** — a single-cell selection has exactly one range, just like a text selection.
+
+### Toolbar and bubble menus
+
+`editor/toolbar.ts` holds the toolbar data model: a group is a list of **nodes**, each either an item (a button) or a menu (a dropdown of items). One description renders three ways — the desktop bar, the dropdown contents, and the compact mobile row plus its overflow sheet — and `flattenGroup` is what lets the mobile sheet show every action as a plain button, so **an action placed in a menu is never lost on mobile**. `collectPrimaryItems` picks the `primary` items for the mobile row and looks inside menus too (Heading 2 lives in the block-style menu but stays on the mobile row).
+
+Menus exist to keep the bar short. Only menus of mutually exclusive states set `reflectActive`, which mirrors the active item onto the trigger so the bar still says which block style or alignment is on; on the Insert menu that would relabel the trigger just because the cursor sits in a link. `reflectActive` shows the **first** active item, so the items it picks from must be mutually exclusive in practice: a blockquote wraps a paragraph and Tiptap reports both as active, which is why the paragraph entry is only active when no wrapper style claims the block. The AI button and the utility menu (download/import/share/AI settings/theme) are pinned to the bar's right edge with `ml-auto`, so their position does not depend on how wide the editing groups are.
+
+There are **two bubble menus**, each a `BubbleMenu` instance with its own extension name and plugin key (`tableBubbleMenu` is `BubbleMenu.extend({ name })`, since duplicate extension names are rejected). Their `shouldShow` rules partition the cases rather than overlapping: the format menu keeps Tiptap's default rule (focused, editable, a selection that is not an empty text block) **minus cell selections** (via `isCellSelection`, not a range count), and the table menu shows for a plain cursor or a cell selection inside a table — a cursor is enough because the row/column tools act on the cell it sits in. Table tools deliberately do not live in the toolbar: as a conditional toolbar group they shifted every button to their right the moment the cursor entered a cell.
 
 ### Build / bundle notes
 

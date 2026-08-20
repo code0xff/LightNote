@@ -32,6 +32,7 @@
 		PanelTop,
 		Pencil,
 		Pilcrow,
+		Plus,
 		Redo,
 		FileDown,
 		Settings2,
@@ -56,6 +57,7 @@
 		DEFAULT_TABLE_SIZE,
 		endSharing,
 		insertTable,
+		isCellSelection,
 		readUploadedDocument,
 		readSharedDocumentHistory,
 		readSharedMetadata,
@@ -109,17 +111,26 @@
 	import AiSettingsDialog from './AiSettingsDialog.svelte';
 	import AiPromptPanel from './AiPromptPanel.svelte';
 	import ToolbarButton from './ToolbarButton.svelte';
+	import ToolbarMenu from './ToolbarMenu.svelte';
+	import {
+		collectPrimaryItems,
+		flattenGroup,
+		toolbarItem,
+		toolbarMenu,
+		type ToolbarGroup,
+		type ToolbarItem
+	} from './toolbar';
 	import type { HocuspocusProvider } from '@hocuspocus/provider';
 	import * as Dialog from '@/lib/components/ui/dialog';
 	import * as Popover from '@/lib/components/ui/popover';
 	import { buttonVariants } from '@/lib/components/ui/button';
 	import { Label } from '@/lib/components/ui/label';
 	import { Input } from '@/lib/components/ui/input';
-	import type { ComponentType } from 'svelte';
 
 	let element: Element;
 	let editor: Editor;
 	let bubbleMenu: HTMLElement;
+	let tableBubbleMenu: HTMLElement;
 	let files: FileList | undefined;
 	let content: string | JSONContent = '';
 	let documents: LightNoteDocument[] = [];
@@ -135,17 +146,6 @@
 	let editingTitleDocumentId: string | null = null;
 	let shareDialogOpen = false;
 	let toolbarOverflowOpen = false;
-
-	type ToolbarItem = {
-		key: string;
-		label: string;
-		icon: ComponentType;
-		onClick: () => void;
-		active?: boolean;
-		disabled?: boolean;
-		primary?: boolean;
-	};
-	type ToolbarGroup = { id: string; label: string; items: ToolbarItem[] };
 
 	let aiSettings: OpenAiSettings = { apiKey: '', model: DEFAULT_OPENAI_MODEL };
 	let aiSettingsOpen = false;
@@ -470,10 +470,10 @@
 			return;
 		}
 
-		// A table CellSelection has one range per selected cell. Treating its
-		// aggregate `from`/`to` as one text range would silently target only one
-		// cell, so leave it unscoped until the user places a normal cursor/selection.
-		if (editor.state.selection.ranges.length > 1) {
+		// Treating a cell selection's aggregate `from`/`to` as one text range would
+		// put the table structure between the cells inside the range, so leave the
+		// panel unscoped until the user places a normal cursor/selection.
+		if (isCellSelection(editor.state.selection)) {
 			clearAiSelection();
 			return;
 		}
@@ -893,7 +893,7 @@
 				// A captured selection makes the run selection-scoped, which removes this
 				// tool, so the live cursor is the only position it can ever insert at.
 				insertAtCursor: (nodes) => {
-					if (editor.state.selection.ranges.length > 1) {
+					if (isCellSelection(editor.state.selection)) {
 						throw new Error('Place the cursor in one table cell before inserting text.');
 					}
 
@@ -1179,10 +1179,70 @@
 	}
 
 	/**
-	 * Build the toolbar as grouped data so it can render two ways from one
-	 * source: the full grouped bar on desktop and a compact primary set plus an
-	 * overflow menu on mobile. Active/disabled states are computed eagerly and
-	 * recomputed whenever `editor` is reassigned (see the `onTransaction` hook).
+	 * Row/column tools live in the table bubble menu, next to the table. In the
+	 * toolbar they would shift every button to their right the moment the cursor
+	 * entered a cell.
+	 */
+	function buildTableActions(activeEditor: Editor): ToolbarItem[] {
+		return [
+			{
+				key: 'add-row',
+				label: 'Add row below',
+				icon: BetweenHorizontalEnd,
+				onClick: () => activeEditor.chain().focus().addRowAfter().run(),
+				disabled: !activeEditor.can().chain().focus().addRowAfter().run()
+			},
+			{
+				key: 'delete-row',
+				label: 'Delete row',
+				icon: FoldVertical,
+				onClick: () => activeEditor.chain().focus().deleteRow().run(),
+				disabled: !activeEditor.can().chain().focus().deleteRow().run()
+			},
+			{
+				key: 'add-column',
+				label: 'Add column right',
+				icon: BetweenVerticalEnd,
+				onClick: () => activeEditor.chain().focus().addColumnAfter().run(),
+				disabled: !activeEditor.can().chain().focus().addColumnAfter().run()
+			},
+			{
+				key: 'delete-column',
+				label: 'Delete column',
+				icon: FoldHorizontal,
+				onClick: () => activeEditor.chain().focus().deleteColumn().run(),
+				disabled: !activeEditor.can().chain().focus().deleteColumn().run()
+			},
+			{
+				key: 'header-row',
+				label: 'Toggle header row',
+				icon: PanelTop,
+				onClick: () => activeEditor.chain().focus().toggleHeaderRow().run(),
+				disabled: !activeEditor.can().chain().focus().toggleHeaderRow().run()
+			},
+			{
+				key: 'merge-cells',
+				label: 'Merge or split cells',
+				icon: Merge,
+				onClick: () => activeEditor.chain().focus().mergeOrSplit().run(),
+				disabled: !activeEditor.can().chain().focus().mergeOrSplit().run()
+			},
+			{
+				key: 'delete-table',
+				label: 'Delete table',
+				icon: Trash2,
+				onClick: () => activeEditor.chain().focus().deleteTable().run()
+			}
+		];
+	}
+
+	/**
+	 * Build the toolbar as grouped data so it can render three ways from one
+	 * source: the desktop bar, where groups of mutually exclusive or rarely used
+	 * actions collapse into dropdowns; those dropdowns; and the compact mobile
+	 * row plus its overflow sheet, which flattens every dropdown back into
+	 * buttons. Active/disabled states are computed eagerly and recomputed
+	 * whenever `editor` is reassigned (see the `onTransaction` hook).
 	 */
 	function buildToolbarGroups(
 		activeEditor: Editor,
@@ -1194,22 +1254,105 @@
 			{
 				id: 'doc',
 				label: 'Document',
-				items: [
-					{
+				nodes: [
+					toolbarItem({
 						key: 'new',
 						label: 'New document',
 						icon: BookPlus,
 						onClick: createNewDocument,
 						disabled: sharing,
 						primary: true
-					}
+					})
+				]
+			},
+			{
+				id: 'history',
+				label: 'History',
+				nodes: [
+					toolbarItem({
+						key: 'undo',
+						label: 'Undo',
+						icon: Undo,
+						onClick: () => activeEditor.chain().focus().undo().run(),
+						disabled: !activeEditor.can().chain().focus().undo().run()
+					}),
+					toolbarItem({
+						key: 'redo',
+						label: 'Redo',
+						icon: Redo,
+						onClick: () => activeEditor.chain().focus().redo().run(),
+						disabled: !activeEditor.can().chain().focus().redo().run()
+					})
+				]
+			},
+			{
+				id: 'blocks',
+				label: 'Block style',
+				nodes: [
+					toolbarMenu({
+						key: 'block-style',
+						label: 'Block style',
+						icon: Pilcrow,
+						// A block always has a style, so the trigger names the current
+						// one; `Paragraph` is only the fallback for an unknown block.
+						caption: 'Paragraph',
+						reflectActive: true,
+						items: [
+							{
+								key: 'paragraph',
+								label: 'Paragraph',
+								icon: Pilcrow,
+								onClick: () => activeEditor.chain().focus().setParagraph().run(),
+								// A blockquote wraps a paragraph, so Tiptap reports both as
+								// active; the wrapper is the style the user chose, and the
+								// trigger must not read `Paragraph` inside a quote.
+								active: activeEditor.isActive('paragraph') && !activeEditor.isActive('blockquote')
+							},
+							{
+								key: 'h1',
+								label: 'Heading 1',
+								icon: Heading1,
+								onClick: () => activeEditor.chain().focus().toggleHeading({ level: 1 }).run(),
+								active: activeEditor.isActive('heading', { level: 1 })
+							},
+							{
+								key: 'h2',
+								label: 'Heading 2',
+								icon: Heading2,
+								onClick: () => activeEditor.chain().focus().toggleHeading({ level: 2 }).run(),
+								active: activeEditor.isActive('heading', { level: 2 }),
+								primary: true
+							},
+							{
+								key: 'h3',
+								label: 'Heading 3',
+								icon: Heading3,
+								onClick: () => activeEditor.chain().focus().toggleHeading({ level: 3 }).run(),
+								active: activeEditor.isActive('heading', { level: 3 })
+							},
+							{
+								key: 'blockquote',
+								label: 'Quote',
+								icon: TextQuote,
+								onClick: () => activeEditor.chain().focus().toggleBlockquote().run(),
+								active: activeEditor.isActive('blockquote')
+							},
+							{
+								key: 'code-block',
+								label: 'Code block',
+								icon: Braces,
+								onClick: () => activeEditor.chain().focus().toggleCodeBlock().run(),
+								active: activeEditor.isActive('codeBlock')
+							}
+						]
+					})
 				]
 			},
 			{
 				id: 'format',
 				label: 'Format',
-				items: [
-					{
+				nodes: [
+					toolbarItem({
 						key: 'bold',
 						label: 'Bold',
 						icon: Bold,
@@ -1217,8 +1360,8 @@
 						active: activeEditor.isActive('bold'),
 						disabled: !activeEditor.can().chain().focus().toggleBold().run(),
 						primary: true
-					},
-					{
+					}),
+					toolbarItem({
 						key: 'italic',
 						label: 'Italic',
 						icon: Italic,
@@ -1226,322 +1369,190 @@
 						active: activeEditor.isActive('italic'),
 						disabled: !activeEditor.can().chain().focus().toggleItalic().run(),
 						primary: true
-					},
-					{
+					}),
+					toolbarItem({
 						key: 'underline',
 						label: 'Underline',
 						icon: Underline,
 						onClick: () => activeEditor.chain().focus().toggleUnderline().run(),
 						active: activeEditor.isActive('underline'),
 						disabled: !activeEditor.can().chain().focus().toggleUnderline().run()
-					},
-					{
+					}),
+					toolbarItem({
 						key: 'strike',
 						label: 'Strikethrough',
 						icon: Strikethrough,
 						onClick: () => activeEditor.chain().focus().toggleStrike().run(),
 						active: activeEditor.isActive('strike'),
 						disabled: !activeEditor.can().chain().focus().toggleStrike().run()
-					},
-					{
+					}),
+					toolbarItem({
 						key: 'code',
 						label: 'Inline code',
 						icon: Code,
 						onClick: () => activeEditor.chain().focus().toggleCode().run(),
 						active: activeEditor.isActive('code'),
 						disabled: !activeEditor.can().chain().focus().toggleCode().run()
-					}
+					})
 				]
 			},
 			{
-				id: 'heading',
-				label: 'Headings',
-				items: [
-					{
-						key: 'paragraph',
-						label: 'Paragraph',
-						icon: Pilcrow,
-						onClick: () => activeEditor.chain().focus().setParagraph().run(),
-						active: activeEditor.isActive('paragraph')
-					},
-					{
-						key: 'h1',
-						label: 'Heading 1',
-						icon: Heading1,
-						onClick: () => activeEditor.chain().focus().toggleHeading({ level: 1 }).run(),
-						active: activeEditor.isActive('heading', { level: 1 })
-					},
-					{
-						key: 'h2',
-						label: 'Heading 2',
-						icon: Heading2,
-						onClick: () => activeEditor.chain().focus().toggleHeading({ level: 2 }).run(),
-						active: activeEditor.isActive('heading', { level: 2 }),
-						primary: true
-					},
-					{
-						key: 'h3',
-						label: 'Heading 3',
-						icon: Heading3,
-						onClick: () => activeEditor.chain().focus().toggleHeading({ level: 3 }).run(),
-						active: activeEditor.isActive('heading', { level: 3 })
-					}
-				]
-			},
-			{
-				id: 'align',
-				label: 'Alignment',
-				items: [
-					{
-						key: 'align-left',
-						label: 'Align left',
-						icon: AlignLeft,
-						onClick: () => activeEditor.chain().focus().setTextAlign('left').run(),
-						active: activeEditor.isActive({ textAlign: 'left' })
-					},
-					{
-						key: 'align-center',
-						label: 'Align center',
-						icon: AlignCenter,
-						onClick: () => activeEditor.chain().focus().setTextAlign('center').run(),
-						active: activeEditor.isActive({ textAlign: 'center' })
-					},
-					{
-						key: 'align-right',
-						label: 'Align right',
-						icon: AlignRight,
-						onClick: () => activeEditor.chain().focus().setTextAlign('right').run(),
-						active: activeEditor.isActive({ textAlign: 'right' })
-					}
-				]
-			},
-			{
-				id: 'blocks',
-				label: 'Lists & blocks',
-				items: [
-					{
+				id: 'lists',
+				label: 'Lists',
+				nodes: [
+					toolbarItem({
 						key: 'bullet-list',
 						label: 'Bullet list',
 						icon: List,
 						onClick: () => activeEditor.chain().focus().toggleBulletList().run(),
 						active: activeEditor.isActive('bulletList'),
 						primary: true
-					},
-					{
+					}),
+					toolbarItem({
 						key: 'ordered-list',
 						label: 'Ordered list',
 						icon: ListOrdered,
 						onClick: () => activeEditor.chain().focus().toggleOrderedList().run(),
 						active: activeEditor.isActive('orderedList')
-					},
-					{
-						key: 'code-block',
-						label: 'Code block',
-						icon: Braces,
-						onClick: () => activeEditor.chain().focus().toggleCodeBlock().run(),
-						active: activeEditor.isActive('codeBlock')
-					},
-					{
-						key: 'blockquote',
-						label: 'Blockquote',
-						icon: TextQuote,
-						onClick: () => activeEditor.chain().focus().toggleBlockquote().run(),
-						active: activeEditor.isActive('blockquote')
-					},
-					{
-						key: 'hr',
-						label: 'Horizontal rule',
-						icon: SeparatorHorizontal,
-						onClick: () => activeEditor.chain().focus().setHorizontalRule().run()
-					}
+					})
 				]
 			},
 			{
 				id: 'insert',
-				label: 'Insert',
-				items: [
-					{
-						key: 'link',
-						label: 'Add or edit link',
-						icon: Link2,
-						onClick: () => setLink(activeEditor),
-						active: activeEditor.isActive('link')
-					},
-					{
-						key: 'unlink',
-						label: 'Remove link',
-						icon: Link2Off,
-						onClick: () => activeEditor.chain().focus().unsetLink().run(),
-						disabled: !activeEditor.isActive('link')
-					},
-					{
-						key: 'image',
-						label: 'Insert image',
-						icon: ImagePlus,
-						onClick: () => addImage(activeEditor)
-					},
-					{
-						key: 'youtube',
-						label: 'Insert YouTube video',
-						icon: MonitorPlay,
-						onClick: () => addYoutube(activeEditor)
-					},
-					{
-						key: 'table',
-						label: 'Insert table',
-						icon: Table,
-						onClick: () => insertTable(activeEditor),
-						disabled: !activeEditor.can().chain().focus().insertTable(DEFAULT_TABLE_SIZE).run()
-					}
-				]
-			},
-			// Row/column tools only make sense with the cursor inside a table, and
-			// the bar is crowded enough without eight permanently dead buttons.
-			...(activeEditor.isActive('table')
-				? [
-						{
-							id: 'table-edit',
-							label: 'Table',
-							items: [
-								{
-									key: 'add-row',
-									label: 'Add row below',
-									icon: BetweenHorizontalEnd,
-									onClick: () => activeEditor.chain().focus().addRowAfter().run(),
-									disabled: !activeEditor.can().chain().focus().addRowAfter().run()
-								},
-								{
-									key: 'delete-row',
-									label: 'Delete row',
-									icon: FoldVertical,
-									onClick: () => activeEditor.chain().focus().deleteRow().run(),
-									disabled: !activeEditor.can().chain().focus().deleteRow().run()
-								},
-								{
-									key: 'add-column',
-									label: 'Add column right',
-									icon: BetweenVerticalEnd,
-									onClick: () => activeEditor.chain().focus().addColumnAfter().run(),
-									disabled: !activeEditor.can().chain().focus().addColumnAfter().run()
-								},
-								{
-									key: 'delete-column',
-									label: 'Delete column',
-									icon: FoldHorizontal,
-									onClick: () => activeEditor.chain().focus().deleteColumn().run(),
-									disabled: !activeEditor.can().chain().focus().deleteColumn().run()
-								},
-								{
-									key: 'header-row',
-									label: 'Toggle header row',
-									icon: PanelTop,
-									onClick: () => activeEditor.chain().focus().toggleHeaderRow().run(),
-									disabled: !activeEditor.can().chain().focus().toggleHeaderRow().run()
-								},
-								{
-									key: 'merge-cells',
-									label: 'Merge or split cells',
-									icon: Merge,
-									onClick: () => activeEditor.chain().focus().mergeOrSplit().run(),
-									disabled: !activeEditor.can().chain().focus().mergeOrSplit().run()
-								},
-								{
-									key: 'delete-table',
-									label: 'Delete table',
-									icon: Trash2,
-									onClick: () => activeEditor.chain().focus().deleteTable().run()
-								}
-							]
-						}
-					]
-				: []),
-			{
-				id: 'history',
-				label: 'History',
-				items: [
-					{
-						key: 'undo',
-						label: 'Undo',
-						icon: Undo,
-						onClick: () => activeEditor.chain().focus().undo().run(),
-						disabled: !activeEditor.can().chain().focus().undo().run()
-					},
-					{
-						key: 'redo',
-						label: 'Redo',
-						icon: Redo,
-						onClick: () => activeEditor.chain().focus().redo().run(),
-						disabled: !activeEditor.can().chain().focus().redo().run()
-					}
-				]
-			},
-			{
-				id: 'file',
-				label: 'File',
-				items: [
-					{
-						key: 'download',
-						label: 'Download as HTML',
-						icon: FileDown,
-						onClick: () => download(activeEditor, doc?.title)
-					},
-					{
-						key: 'import',
-						label: 'Import HTML file',
-						icon: FileUp,
-						onClick: () => window.document.getElementById('selectedFile')?.click(),
-						disabled: sharing
-					}
-				]
-			},
-			{
-				id: 'share',
-				label: 'Share',
-				items: [
-					{
-						key: 'share',
-						label: 'Share',
-						icon: ScreenShare,
-						onClick: () => (shareDialogOpen = true)
-					},
-					{
-						key: 'stop-share',
-						label: 'Stop sharing',
-						icon: ScreenShareOff,
-						onClick: () => endSharing(activeProvider),
-						disabled: !activeProvider
-					}
+				label: 'Align & insert',
+				nodes: [
+					toolbarMenu({
+						key: 'align',
+						label: 'Text alignment',
+						icon: AlignLeft,
+						reflectActive: true,
+						items: [
+							{
+								key: 'align-left',
+								label: 'Align left',
+								icon: AlignLeft,
+								onClick: () => activeEditor.chain().focus().setTextAlign('left').run(),
+								active: activeEditor.isActive({ textAlign: 'left' })
+							},
+							{
+								key: 'align-center',
+								label: 'Align center',
+								icon: AlignCenter,
+								onClick: () => activeEditor.chain().focus().setTextAlign('center').run(),
+								active: activeEditor.isActive({ textAlign: 'center' })
+							},
+							{
+								key: 'align-right',
+								label: 'Align right',
+								icon: AlignRight,
+								onClick: () => activeEditor.chain().focus().setTextAlign('right').run(),
+								active: activeEditor.isActive({ textAlign: 'right' })
+							}
+						]
+					}),
+					toolbarMenu({
+						key: 'insert',
+						label: 'Insert',
+						icon: Plus,
+						items: [
+							{
+								key: 'link',
+								label: 'Link',
+								icon: Link2,
+								onClick: () => setLink(activeEditor),
+								active: activeEditor.isActive('link')
+							},
+							{
+								key: 'unlink',
+								label: 'Remove link',
+								icon: Link2Off,
+								onClick: () => activeEditor.chain().focus().unsetLink().run(),
+								disabled: !activeEditor.isActive('link')
+							},
+							{
+								key: 'image',
+								label: 'Image',
+								icon: ImagePlus,
+								onClick: () => addImage(activeEditor)
+							},
+							{
+								key: 'youtube',
+								label: 'YouTube video',
+								icon: MonitorPlay,
+								onClick: () => addYoutube(activeEditor)
+							},
+							{
+								key: 'table',
+								label: 'Table',
+								icon: Table,
+								onClick: () => insertTable(activeEditor),
+								disabled: !activeEditor.can().chain().focus().insertTable(DEFAULT_TABLE_SIZE).run()
+							},
+							{
+								key: 'hr',
+								label: 'Horizontal rule',
+								icon: SeparatorHorizontal,
+								onClick: () => activeEditor.chain().focus().setHorizontalRule().run()
+							}
+						]
+					})
 				]
 			},
 			{
 				id: 'ai',
 				label: 'AI',
-				items: [
-					{
+				nodes: [
+					toolbarItem({
 						key: 'ai-writing',
 						label: 'AI writing',
 						icon: Sparkles,
 						onClick: openAiPanel,
 						primary: true
-					},
-					{
+					})
+				]
+			},
+			{
+				id: 'more',
+				label: 'More',
+				nodes: [
+					toolbarItem({
+						key: 'download',
+						label: 'Download as HTML',
+						icon: FileDown,
+						onClick: () => download(activeEditor, doc?.title)
+					}),
+					toolbarItem({
+						key: 'import',
+						label: 'Import HTML file',
+						icon: FileUp,
+						onClick: () => window.document.getElementById('selectedFile')?.click(),
+						disabled: sharing
+					}),
+					toolbarItem({
+						key: 'share',
+						label: 'Share',
+						icon: ScreenShare,
+						onClick: () => (shareDialogOpen = true)
+					}),
+					toolbarItem({
+						key: 'stop-share',
+						label: 'Stop sharing',
+						icon: ScreenShareOff,
+						onClick: () => endSharing(activeProvider),
+						disabled: !activeProvider
+					}),
+					toolbarItem({
 						key: 'ai-settings',
 						label: 'AI settings',
 						icon: Settings2,
 						onClick: openAiSettings
-					}
-				]
-			},
-			{
-				id: 'view',
-				label: 'View',
-				items: [
-					{
+					}),
+					toolbarItem({
 						key: 'theme',
 						label: 'Toggle theme',
 						icon: SunMoon,
 						onClick: toggleMode
-					}
+					})
 				]
 			}
 		];
@@ -1550,9 +1561,22 @@
 	$: toolbarGroups = editor
 		? buildToolbarGroups(editor, isSharingMode, provider, currentDocument)
 		: [];
-	$: primaryToolbarItems = toolbarGroups.flatMap((group) =>
-		group.items.filter((item) => item.primary)
-	);
+	// The bar keeps the editing groups; AI and the utility actions are pinned to
+	// its right edge so their position never depends on how wide the rest is.
+	$: barGroups = toolbarGroups.filter((group) => group.id !== 'ai' && group.id !== 'more');
+	$: trailingItems = toolbarGroups
+		.filter((group) => group.id === 'ai')
+		.flatMap((group) => flattenGroup(group));
+	$: moreMenu = {
+		key: 'more',
+		label: 'More tools',
+		icon: MoreHorizontal,
+		items: toolbarGroups
+			.filter((group) => group.id === 'more')
+			.flatMap((group) => flattenGroup(group))
+	};
+	$: primaryToolbarItems = collectPrimaryItems(toolbarGroups);
+	$: tableActions = editor ? buildTableActions(editor) : [];
 
 	function runToolbarItem(item: ToolbarItem) {
 		item.onClick();
@@ -1618,7 +1642,10 @@
 					localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
 					sharedDocuments = upsertSharedDocumentHistory({ endpoint, workspace });
 
-					extensions = await getExtensionsOnSharing(provider, bubbleMenu);
+					extensions = await getExtensionsOnSharing(provider, {
+						format: bubbleMenu,
+						table: tableBubbleMenu
+					});
 					await loadAiHistory();
 				} catch (error) {
 					const message = error instanceof Error ? error.message : 'Unknown error';
@@ -1638,7 +1665,7 @@
 					_workspace = shared?.workspace ?? '';
 					sharedDocuments = readSharedDocumentHistory();
 
-					extensions = getExtensions(bubbleMenu);
+					extensions = getExtensions({ format: bubbleMenu, table: tableBubbleMenu });
 					currentDocument = await ensureInitialDocument();
 					documentTitle = currentDocument.title;
 					content = currentDocument.content;
@@ -1719,24 +1746,40 @@
 				on:change={importDocument}
 			/>
 
-			<!-- Desktop: full grouped toolbar -->
+			<!-- Desktop: grouped toolbar, with dropdowns for the crowded groups -->
 			<div class="hidden w-full items-center overflow-x-auto lg:flex">
-				{#each toolbarGroups as group, groupIndex (group.id)}
+				{#each barGroups as group, groupIndex (group.id)}
 					{#if groupIndex > 0}
 						<div class="mx-1.5 h-6 w-px shrink-0 bg-border" aria-hidden="true"></div>
 					{/if}
 					<div class="flex shrink-0 items-center gap-0.5">
-						{#each group.items as item (item.key)}
-							<ToolbarButton
-								icon={item.icon}
-								label={item.label}
-								active={item.active}
-								disabled={item.disabled}
-								on:click={item.onClick}
-							/>
+						{#each group.nodes as node (node.key)}
+							{#if node.kind === 'menu'}
+								<ToolbarMenu menu={node} />
+							{:else}
+								<ToolbarButton
+									icon={node.icon}
+									label={node.label}
+									active={node.active}
+									disabled={node.disabled}
+									on:click={node.onClick}
+								/>
+							{/if}
 						{/each}
 					</div>
 				{/each}
+				<div class="ml-auto flex shrink-0 items-center gap-0.5 pl-3">
+					{#each trailingItems as item (item.key)}
+						<ToolbarButton
+							icon={item.icon}
+							label={item.label}
+							active={item.active}
+							disabled={item.disabled}
+							on:click={item.onClick}
+						/>
+					{/each}
+					<ToolbarMenu menu={moreMenu} />
+				</div>
 			</div>
 
 			<!-- Mobile: primary actions + overflow menu -->
@@ -1763,7 +1806,7 @@
 								<div class="grid gap-1.5">
 									<span class="px-1 text-xs font-medium text-muted-foreground">{group.label}</span>
 									<div class="flex flex-wrap gap-1">
-										{#each group.items as item (item.key)}
+										{#each flattenGroup(group) as item (item.key)}
 											<ToolbarButton
 												icon={item.icon}
 												label={item.label}
@@ -1901,7 +1944,28 @@
 	</aside>
 {/if}
 
-<div class="bubble-menu rounded-md" bind:this={bubbleMenu}>
+<!-- Table tools travel with the table: the toolbar would reshuffle every time
+	the cursor entered a cell. -->
+<div
+	class="bubble-menu gap-0.5 rounded-md border border-border p-0.5 shadow-md"
+	bind:this={tableBubbleMenu}
+>
+	{#if editor}
+		{#each tableActions as item (item.key)}
+			<ToolbarButton
+				icon={item.icon}
+				label={item.label}
+				disabled={item.disabled}
+				on:click={item.onClick}
+			/>
+		{/each}
+	{/if}
+</div>
+
+<div
+	class="bubble-menu gap-0.5 rounded-md border border-border p-0.5 shadow-md"
+	bind:this={bubbleMenu}
+>
 	{#if editor}
 		<Button
 			on:click={() => editor.chain().focus().toggleBold().run()}

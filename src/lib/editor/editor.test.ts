@@ -1,9 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getSchema } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
+import Table from '@tiptap/extension-table';
+import TableCell from '@tiptap/extension-table-cell';
+import TableHeader from '@tiptap/extension-table-header';
+import TableRow from '@tiptap/extension-table-row';
+import { TextSelection } from '@tiptap/pm/state';
+import { CellSelection } from '@tiptap/pm/tables';
 import {
 	buildShareUrl,
 	createExportHtml,
 	extractEditorContent,
 	getDefaultDownloadName,
+	isCellSelection,
 	normalizeDownloadName,
 	readSharedDocumentHistory,
 	readUploadedDocument,
@@ -160,5 +169,53 @@ describe('editor helpers', () => {
 			contentFormat: 'html',
 			sourceFileName: 'meeting notes.html'
 		});
+	});
+});
+
+describe('isCellSelection', () => {
+	const schema = getSchema([StarterKit, Table, TableRow, TableHeader, TableCell]);
+	const cell = (text: string, type: 'tableHeader' | 'tableCell') => ({
+		type,
+		content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
+	});
+	const doc = schema.nodeFromJSON({
+		type: 'doc',
+		content: [
+			{
+				type: 'table',
+				content: [
+					{ type: 'tableRow', content: [cell('a', 'tableHeader'), cell('b', 'tableHeader')] },
+					{ type: 'tableRow', content: [cell('1', 'tableCell'), cell('2', 'tableCell')] }
+				]
+			}
+		]
+	});
+	const cellPositions: number[] = [];
+
+	doc.descendants((node, pos) => {
+		if (node.type.name === 'tableHeader' || node.type.name === 'tableCell') {
+			cellPositions.push(pos);
+		}
+	});
+
+	it('detects a selection of a single cell, which has only one range', () => {
+		const selection = CellSelection.create(doc, cellPositions[0]);
+
+		// The trap this guard exists for: one range looks exactly like a text
+		// selection, so counting ranges would let a single cell through.
+		expect(selection.ranges).toHaveLength(1);
+		expect(isCellSelection(selection)).toBe(true);
+	});
+
+	it('detects a selection spanning several cells', () => {
+		const selection = CellSelection.create(doc, cellPositions[0], cellPositions[3]);
+
+		expect(isCellSelection(selection)).toBe(true);
+	});
+
+	it('leaves a text selection inside a cell alone', () => {
+		const selection = TextSelection.create(doc, cellPositions[0] + 2, cellPositions[0] + 3);
+
+		expect(isCellSelection(selection)).toBe(false);
 	});
 });

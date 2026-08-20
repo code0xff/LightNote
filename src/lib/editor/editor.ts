@@ -1,4 +1,6 @@
 import type { Editor } from '@tiptap/core';
+import type { Selection } from '@tiptap/pm/state';
+import { CellSelection } from '@tiptap/pm/tables';
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import { escapeHtml, isSupportedUrl } from '$lib/utils';
 import { htmlStyle } from './constants';
@@ -328,6 +330,16 @@ export function addYoutube(editor: Editor) {
 		width: 640,
 		height: 480
 	});
+}
+
+/**
+ * A cell selection can never be treated as one text range: its `from`/`to` span
+ * the table structure between the selected cells, so writing over it would
+ * delete rows and cells. Counting `ranges` is not enough to spot one — a
+ * single-cell selection has exactly one range, just like a text selection.
+ */
+export function isCellSelection(selection: Selection) {
+	return selection instanceof CellSelection;
 }
 
 /** Table inserted by the toolbar: a header row plus two body rows. */

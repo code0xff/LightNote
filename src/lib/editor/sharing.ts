@@ -1,14 +1,14 @@
 import type { HocuspocusProvider } from '@hocuspocus/provider';
 import StarterKit from '@tiptap/starter-kit';
-import { getExtensions } from './extensions';
+import { getExtensions, type BubbleMenuElements } from './extensions';
 
 export async function getExtensionsOnSharing(
 	provider: HocuspocusProvider,
-	bubbleMenu: HTMLElement
+	menus: BubbleMenuElements
 ) {
 	const { default: Collaboration } = await import('@tiptap/extension-collaboration');
 
-	return getExtensions(bubbleMenu, {
+	return getExtensions(menus, {
 		starterKit: StarterKit.configure({
 			history: false
 		}),
