@@ -46,6 +46,22 @@ The editor decides its **runtime mode once, in `onMount`**, based on URL query p
 - **Normal mode** — loads documents from IndexedDB, autosaves edits. Uses `getExtensions()` from `extensions.ts`.
 - **Sharing (collaboration) mode** — triggered when `?endpoint=` or `?workspace=` is present. Connects a Hocuspocus/Yjs provider over WebSocket and uses `getExtensionsOnSharing()` (`sharing.ts`), which disables Tiptap's local history (Yjs owns undo/redo) and adds the Collaboration extension. In this mode local IndexedDB saving is skipped (`isSharingMode` guards `scheduleCurrentDocumentSave`/`flushCurrentDocument`). Collaboration deps are dynamically imported so they stay out of the initial bundle.
 
+### Document title
+
+The title is **one piece of state**, `documentTitle` in `editor.svelte`. The Notion-style title block above the editor binds it and the sidebar card renders it for the active document, so editing either place updates the other with no copying — do not introduce a second title variable to "sync". Saving goes through the existing `scheduleCurrentDocumentSave(true)` / `flushCurrentDocument` path, and the AI rename path assigns the same variable.
+
+Blank titles are the subtle part. The store normalizes `''` (and whitespace) to `UNTITLED_TITLE`, so only the **input** keeps the raw value — replacing a cleared field with text while the user is editing it is worse than an empty field with a placeholder. Everything that displays or reports the title reads `effectiveDocumentTitle` instead (the sidebar card, the shared-session header, and `getCurrentDocumentTitle` for the agent), and `queueDocumentSave` falls back to the store's normalized title when the local one is blank — otherwise leaving a document would park a nameless card in the list until reload.
+
+Title and body edits **share one debounce timer**, so a body edit restarts the timer that a title edit was waiting on. `titleDirty` is what keeps the title in the eventual write; without it a keystroke in the body a moment after renaming would queue a content-only save and drop the new name until the next blur.
+
+Two layout details keep the title aligned with the text under it:
+
+- `documentColumnClass` (`editor/constants.ts`) is shared by the title block's `class` and the editor body's Tiptap `editorProps` class. They are styled in different files, so a copied value would drift and the title would sit off-centre from its own paragraphs.
+- The top clearance for the fixed nav/aside lives on `.editor-shell` (`pt-40 lg:pt-16`), not on the editor body, because the title block now occupies that space and sharing mode swaps the input for static text.
+- `styles.scss` narrows **both** `.tiptap` and `.document-title` when the AI panel is open; listing only one of them misaligns the title as soon as the panel opens.
+
+In sharing mode there is no local document row to rename, so the block shows the workspace name as static text.
+
 ### Logic-in-`.ts`, UI-in-`.svelte` (testing convention)
 
 Testable logic is deliberately extracted out of Svelte components into plain `.ts` modules so it can be unit-tested with vitest; the `.svelte` components themselves are not tested. Follow this pattern when adding features:

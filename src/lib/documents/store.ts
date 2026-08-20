@@ -7,7 +7,8 @@ export const LEGACY_AUTO_SAVE_KEY = 'auto_saved';
 const DB_NAME = 'light-note';
 const DB_VERSION = 3;
 const DOCUMENT_STORE = 'documents';
-const UNTITLED_TITLE = 'Untitled';
+/** The name a blank title is stored and displayed under. */
+export const UNTITLED_TITLE = 'Untitled';
 
 /**
  * AI conversation history, scoped per document. Lives in the same database so

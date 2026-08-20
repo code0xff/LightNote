@@ -11,6 +11,7 @@ import {
 	buildShareUrl,
 	createExportHtml,
 	extractEditorContent,
+	formatPageTitle,
 	getDefaultDownloadName,
 	isCellSelection,
 	normalizeDownloadName,
@@ -169,6 +170,19 @@ describe('editor helpers', () => {
 			contentFormat: 'html',
 			sourceFileName: 'meeting notes.html'
 		});
+	});
+});
+
+describe('formatPageTitle', () => {
+	it('names the open document', () => {
+		expect(formatPageTitle('Meeting notes')).toBe('LightNote - Meeting notes');
+		expect(formatPageTitle('  Meeting notes  ')).toBe('LightNote - Meeting notes');
+	});
+
+	it('falls back to the app name for an empty or missing title', () => {
+		expect(formatPageTitle('')).toBe('LightNote');
+		expect(formatPageTitle('   ')).toBe('LightNote');
+		expect(formatPageTitle()).toBe('LightNote');
 	});
 });
 

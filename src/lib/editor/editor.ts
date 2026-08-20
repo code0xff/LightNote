@@ -143,6 +143,13 @@ export function removeSharedDocumentHistory(
 	return nextDocuments;
 }
 
+/** The browser tab title: the document name, or just the app name. */
+export function formatPageTitle(name?: string) {
+	const normalizedName = name?.trim();
+
+	return normalizedName ? `LightNote - ${normalizedName}` : 'LightNote';
+}
+
 export function getDefaultDownloadName(
 	workspace: string | null,
 	edited: string | null,

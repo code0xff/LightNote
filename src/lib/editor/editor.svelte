@@ -56,6 +56,7 @@
 		download,
 		DEFAULT_TABLE_SIZE,
 		endSharing,
+		formatPageTitle,
 		insertTable,
 		isCellSelection,
 		readUploadedDocument,
@@ -77,10 +78,12 @@
 		getDocument,
 		listDocuments,
 		setStoredCurrentDocumentId,
+		UNTITLED_TITLE,
 		updateDocument,
 		type LightNoteDocument
 	} from '$lib/documents/store';
 	import { getExtensions } from './extensions';
+	import { documentColumnClass } from './constants';
 	import {
 		DEFAULT_OPENAI_MODEL,
 		generateText,
@@ -143,6 +146,8 @@
 	let isSharingMode = false;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let saveQueue: Promise<void> = Promise.resolve();
+	/** A title edit is waiting on the shared save timer. */
+	let titleDirty = false;
 	let editingTitleDocumentId: string | null = null;
 	let shareDialogOpen = false;
 	let toolbarOverflowOpen = false;
@@ -210,11 +215,16 @@
 
 	let title: string = 'LightNote';
 
-	function formatPageTitle(name?: string) {
-		const normalizedName = name?.trim();
-
-		return normalizedName ? `LightNote - ${normalizedName}` : 'LightNote';
-	}
+	/**
+	 * What the title *means* when it is blank or only whitespace: the store
+	 * normalizes those to `Untitled`, so anything that displays or reports the
+	 * title has to agree with the store. The input itself keeps the raw value —
+	 * replacing a cleared field with text while the user edits it is worse than
+	 * an empty field with a placeholder.
+	 */
+	$: effectiveDocumentTitle = isSharingMode
+		? _workspace.trim() || 'Shared document'
+		: documentTitle.trim() || UNTITLED_TITLE;
 
 	function formatUpdatedAt(value: number) {
 		return new Intl.DateTimeFormat(undefined, {
@@ -227,6 +237,44 @@
 
 	function handleTitleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
+			(event.currentTarget as HTMLInputElement | null)?.blur();
+		}
+	}
+
+	/**
+	 * The title above the editor edits the same `documentTitle` the sidebar card
+	 * renders, so the two stay in sync in both directions without any copying.
+	 */
+	function handleDocumentTitleInput() {
+		title = formatPageTitle(documentTitle);
+		scheduleCurrentDocumentSave(true);
+	}
+
+	async function focusDocumentTitle() {
+		if (isSharingMode) {
+			return;
+		}
+
+		await tick();
+
+		const input = window.document.getElementById(
+			'editor-document-title'
+		) as HTMLInputElement | null;
+
+		input?.focus();
+		input?.select();
+	}
+
+	function handleDocumentTitleKeydown(event: KeyboardEvent) {
+		// Enter belongs to the body: a title is one line, and dropping into the
+		// text is what the key does everywhere else in a document editor.
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			editor?.commands.focus('start');
+			return;
+		}
+
+		if (event.key === 'Escape') {
 			(event.currentTarget as HTMLInputElement | null)?.blur();
 		}
 	}
@@ -265,11 +313,21 @@
 			clearTimeout(saveTimer);
 		}
 
+		if (saveTitle) {
+			titleDirty = true;
+		}
+
 		const documentId = currentDocument.id;
 		const content = editor.getJSON();
-		const nextTitle = saveTitle ? documentTitle : undefined;
 
 		saveTimer = setTimeout(() => {
+			// Title and body share this timer, so an edit in the body restarts it.
+			// The dirty flag is what stops that from dropping a title the user
+			// typed less than a debounce ago; reading it here also picks up
+			// whatever they typed since.
+			const nextTitle = titleDirty ? documentTitle : undefined;
+
+			titleDirty = false;
 			void queueDocumentSave(documentId, content, nextTitle);
 		}, 500);
 	}
@@ -287,19 +345,25 @@
 					...(nextTitle === undefined ? {} : { title: nextTitle })
 				});
 
+				// Keep the title the user is typing rather than the value this
+				// (possibly already stale) write returned — except when theirs is
+				// blank, where `updated.title` carries the store's `Untitled` and
+				// overriding it would leave a nameless card behind in the list.
+				const savedTitle = documentTitle.trim() ? documentTitle : updated.title;
+
 				if (currentDocument?.id === documentId) {
 					currentDocument = {
 						...updated,
-						title: documentTitle
+						title: savedTitle
 					};
-					title = formatPageTitle(documentTitle);
+					title = formatPageTitle(savedTitle);
 				}
 
 				documents = documents.map((document) =>
 					document.id === documentId
 						? {
 								...updated,
-								title: currentDocument?.id === documentId ? documentTitle : updated.title
+								title: currentDocument?.id === documentId ? savedTitle : updated.title
 							}
 						: document
 				);
@@ -316,6 +380,9 @@
 			clearTimeout(saveTimer);
 			saveTimer = undefined;
 		}
+
+		// A flush always writes the title, so nothing is left pending.
+		titleDirty = false;
 
 		if (!isSharingMode && currentDocument && editor) {
 			await queueDocumentSave(currentDocument.id, editor.getJSON(), documentTitle);
@@ -353,6 +420,9 @@
 
 			await refreshDocuments();
 			setActiveDocument(document);
+			// A new page is unnamed, so the caret belongs in the title rather than
+			// in an empty body the user has nothing to say in yet.
+			await focusDocumentTitle();
 		} catch (error) {
 			window.alert('Failed to create document');
 			console.error(error);
@@ -959,7 +1029,7 @@
 				}
 			},
 			getCurrentDocumentId: () => currentDocument?.id ?? null,
-			getCurrentDocumentTitle: () => documentTitle,
+			getCurrentDocumentTitle: () => effectiveDocumentTitle,
 			isSharingMode,
 			onStoreChanged: refreshDocuments,
 			openDocument: async (document) => {
@@ -1687,8 +1757,7 @@
 				element: element,
 				editorProps: {
 					attributes: {
-						class:
-							'mt-40 p-4 outline-none md:w-[708px] md:py-8 md:px-0 md:mx-auto lg:ml-[calc(18rem+(100vw-18rem-708px)/2)] lg:mt-16'
+						class: `px-4 pb-4 pt-2 outline-none md:pb-8 md:pt-3 ${documentColumnClass}`
 					}
 				},
 				extensions,
@@ -1892,7 +1961,7 @@
 									class="h-7 px-2 py-1 text-sm font-medium"
 									bind:value={documentTitle}
 									on:click={(event) => event.stopPropagation()}
-									on:input={() => scheduleCurrentDocumentSave(true)}
+									on:input={handleDocumentTitleInput}
 									on:change={() => void flushCurrentDocument()}
 									on:blur={() => void finishTitleEditing()}
 									on:keydown={handleTitleKeydown}
@@ -1908,7 +1977,7 @@
 								on:click={() => startTitleEditing(document)}
 							>
 								<span class="flex min-h-7 items-center gap-1">
-									<span class="truncate font-medium">{documentTitle || 'Untitled'}</span>
+									<span class="truncate font-medium">{effectiveDocumentTitle}</span>
 									<Pencil class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 								</span>
 								<span class="mt-1 block text-xs text-muted-foreground"
@@ -2013,7 +2082,28 @@
 	{/if}
 </div>
 
-<div class="editor-shell" class:ai-panel-open={aiOpen} bind:this={element} />
+<div class="editor-shell pt-40 lg:pt-16" class:ai-panel-open={aiOpen}>
+	<div class="document-title px-4 pt-4 md:pt-8 {documentColumnClass}">
+		{#if isSharingMode}
+			<!-- A shared session is named by its workspace, and there is no local
+			     document row to rename. -->
+			<h1 class="truncate text-3xl font-bold md:text-4xl">{effectiveDocumentTitle}</h1>
+		{:else}
+			<input
+				id="editor-document-title"
+				aria-label="Document title"
+				placeholder="Untitled"
+				class="w-full border-0 bg-transparent p-0 text-3xl font-bold outline-none placeholder:text-muted-foreground/50 md:text-4xl"
+				bind:value={documentTitle}
+				on:input={handleDocumentTitleInput}
+				on:change={() => void flushCurrentDocument()}
+				on:blur={() => void flushCurrentDocument()}
+				on:keydown={handleDocumentTitleKeydown}
+			/>
+		{/if}
+	</div>
+	<div bind:this={element}></div>
+</div>
 
 <AiSettingsDialog
 	bind:open={aiSettingsOpen}
