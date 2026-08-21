@@ -149,6 +149,7 @@
 	/** A title edit is waiting on the shared save timer. */
 	let titleDirty = false;
 	let editingTitleDocumentId: string | null = null;
+	let documentTitleField: HTMLTextAreaElement | undefined;
 	let shareDialogOpen = false;
 	let toolbarOverflowOpen = false;
 
@@ -237,18 +238,53 @@
 
 	function handleTitleKeydown(event: KeyboardEvent) {
 		if (event.key === 'Enter') {
-			(event.currentTarget as HTMLInputElement | null)?.blur();
+			// The field is a textarea so a long title can wrap instead of scrolling
+			// sideways; Enter still commits rather than inserting a line break.
+			event.preventDefault();
+			(event.currentTarget as HTMLTextAreaElement | null)?.blur();
 		}
 	}
 
+	/** Grows a title field to its wrapped height instead of scrolling it. */
+	function resizeTitleField(field: HTMLTextAreaElement) {
+		field.style.height = 'auto';
+		field.style.height = `${field.scrollHeight}px`;
+	}
+
 	/**
-	 * The title above the editor edits the same `documentTitle` the sidebar card
-	 * renders, so the two stay in sync in both directions without any copying.
+	 * The title above the editor and the sidebar card edit the same
+	 * `documentTitle`, so the two stay in sync in both directions without any
+	 * copying, and one handler serves both fields.
 	 */
-	function handleDocumentTitleInput() {
+	function handleTitleInput(event: Event) {
+		const field = event.currentTarget as HTMLTextAreaElement;
+
+		// A pasted title can carry newlines, which a textarea keeps and the
+		// single-line input it replaced could not produce. A title is one line.
+		if (field.value.includes('\n')) {
+			field.value = field.value.replace(/\s*\n+\s*/g, ' ');
+			documentTitle = field.value;
+		}
+
+		resizeTitleField(field);
 		title = formatPageTitle(documentTitle);
 		scheduleCurrentDocumentSave(true);
 	}
+
+	/**
+	 * Opening a document (or an agent rename) assigns `documentTitle` without an
+	 * input event, so the field would keep the height the previous title needed.
+	 * `tick` waits for the new value to reach the DOM before it is measured.
+	 */
+	async function refreshDocumentTitleHeight() {
+		await tick();
+
+		if (documentTitleField) {
+			resizeTitleField(documentTitleField);
+		}
+	}
+
+	$: documentTitle, void refreshDocumentTitleHeight();
 
 	async function focusDocumentTitle() {
 		if (isSharingMode) {
@@ -257,12 +293,15 @@
 
 		await tick();
 
-		const input = window.document.getElementById(
+		const field = window.document.getElementById(
 			'editor-document-title'
-		) as HTMLInputElement | null;
+		) as HTMLTextAreaElement | null;
 
-		input?.focus();
-		input?.select();
+		if (field) {
+			resizeTitleField(field);
+			field.focus();
+			field.select();
+		}
 	}
 
 	function handleDocumentTitleKeydown(event: KeyboardEvent) {
@@ -275,7 +314,7 @@
 		}
 
 		if (event.key === 'Escape') {
-			(event.currentTarget as HTMLInputElement | null)?.blur();
+			(event.currentTarget as HTMLTextAreaElement | null)?.blur();
 		}
 	}
 
@@ -287,12 +326,15 @@
 		editingTitleDocumentId = documentToEdit.id;
 		await tick();
 
-		const input = window.document.getElementById(
+		const field = window.document.getElementById(
 			`document-title-${documentToEdit.id}`
-		) as HTMLInputElement | null;
+		) as HTMLTextAreaElement | null;
 
-		input?.focus();
-		input?.select();
+		if (field) {
+			resizeTitleField(field);
+			field.focus();
+			field.select();
+		}
 	}
 
 	async function finishTitleEditing() {
@@ -1786,11 +1828,38 @@
 
 		void initializeEditor();
 
+		// A wrapped title needs a different height at every column width, and the
+		// column is resized by the window and by the AI panel's animated padding.
+		// The observer watches the field itself, so the guard is what keeps the
+		// height it sets from feeding back as another resize.
+		let observedTitleWidth = 0;
+		const titleObserver =
+			typeof ResizeObserver === 'undefined'
+				? undefined
+				: new ResizeObserver((entries) => {
+						const width = entries[0]?.contentRect.width ?? 0;
+
+						if (width === observedTitleWidth) {
+							return;
+						}
+
+						observedTitleWidth = width;
+
+						if (documentTitleField) {
+							resizeTitleField(documentTitleField);
+						}
+					});
+
+		if (documentTitleField) {
+			titleObserver?.observe(documentTitleField);
+		}
+
 		return () => {
 			disposed = true;
 			if (saveTimer) {
 				clearTimeout(saveTimer);
 			}
+			titleObserver?.disconnect();
 			editor?.destroy();
 			(provider as (HocuspocusProvider & { destroy?: () => void }) | undefined)?.destroy?.();
 		};
@@ -1897,7 +1966,7 @@
 
 {#if editor}
 	<aside
-		class="fixed left-0 top-16 z-10 flex h-24 w-full flex-col border-b border-border bg-background lg:bottom-0 lg:top-0 lg:z-30 lg:h-auto lg:w-72 lg:border-b-0 lg:border-r"
+		class="fixed left-0 top-16 z-10 flex h-28 w-full flex-col border-b border-border bg-background lg:bottom-0 lg:top-0 lg:z-30 lg:h-auto lg:w-72 lg:border-b-0 lg:border-r"
 	>
 		<div class="hidden h-16 items-center justify-between border-b border-border px-4 lg:flex">
 			<div class="min-w-0">
@@ -1926,7 +1995,9 @@
 							class="min-w-0 text-left"
 							on:click={() => switchSharedDocument(document)}
 						>
-							<span class="block min-h-5 truncate font-medium">{document.workspace}</span>
+							<span class="line-clamp-2 block min-h-5 break-words font-medium lg:line-clamp-none"
+								>{document.workspace}</span
+							>
 							<span class="mt-1 block truncate text-xs text-muted-foreground"
 								>{document.endpoint}</span
 							>
@@ -1954,18 +2025,19 @@
 					>
 						{#if document.id === currentDocument?.id && editingTitleDocumentId === document.id}
 							<div class="min-w-0">
-								<Input
+								<textarea
 									id={`document-title-${document.id}`}
 									aria-label="Document title"
 									placeholder="Untitled"
-									class="h-7 px-2 py-1 text-sm font-medium"
+									rows="1"
+									class="block w-full resize-none overflow-hidden rounded-md border border-input bg-background px-2 py-1 text-sm font-medium ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 									bind:value={documentTitle}
 									on:click={(event) => event.stopPropagation()}
-									on:input={handleDocumentTitleInput}
+									on:input={handleTitleInput}
 									on:change={() => void flushCurrentDocument()}
 									on:blur={() => void finishTitleEditing()}
 									on:keydown={handleTitleKeydown}
-								/>
+								></textarea>
 								<span class="mt-1 block text-xs text-muted-foreground"
 									>{formatUpdatedAt(document.updatedAt)}</span
 								>
@@ -1976,9 +2048,12 @@
 								class="min-w-0 text-left"
 								on:click={() => startTitleEditing(document)}
 							>
-								<span class="flex min-h-7 items-center gap-1">
-									<span class="truncate font-medium">{effectiveDocumentTitle}</span>
-									<Pencil class="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+								<span class="flex min-h-7 items-start gap-1">
+									<span
+										class="line-clamp-2 min-w-0 break-words py-0.5 font-medium lg:line-clamp-none"
+										>{effectiveDocumentTitle}</span
+									>
+									<Pencil class="mt-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 								</span>
 								<span class="mt-1 block text-xs text-muted-foreground"
 									>{formatUpdatedAt(document.updatedAt)}</span
@@ -1990,7 +2065,7 @@
 								class="min-w-0 text-left"
 								on:click={() => switchDocument(document.id)}
 							>
-								<span class="block min-h-5 truncate font-medium"
+								<span class="line-clamp-2 block min-h-5 break-words font-medium lg:line-clamp-none"
 									>{document.title || 'Untitled'}</span
 								>
 								<span class="mt-1 block text-xs text-muted-foreground"
@@ -2082,24 +2157,26 @@
 	{/if}
 </div>
 
-<div class="editor-shell pt-40 lg:pt-16" class:ai-panel-open={aiOpen}>
+<div class="editor-shell pt-44 lg:pt-16" class:ai-panel-open={aiOpen}>
 	<div class="document-title px-4 pt-4 md:pt-8 {documentColumnClass}">
 		{#if isSharingMode}
 			<!-- A shared session is named by its workspace, and there is no local
 			     document row to rename. -->
-			<h1 class="truncate text-3xl font-bold md:text-4xl">{effectiveDocumentTitle}</h1>
+			<h1 class="break-words text-3xl font-bold md:text-4xl">{effectiveDocumentTitle}</h1>
 		{:else}
-			<input
+			<textarea
+				bind:this={documentTitleField}
 				id="editor-document-title"
 				aria-label="Document title"
 				placeholder="Untitled"
-				class="w-full border-0 bg-transparent p-0 text-3xl font-bold outline-none placeholder:text-muted-foreground/50 md:text-4xl"
+				rows="1"
+				class="block w-full resize-none overflow-hidden break-words border-0 bg-transparent p-0 text-3xl font-bold outline-none placeholder:text-muted-foreground/50 md:text-4xl"
 				bind:value={documentTitle}
-				on:input={handleDocumentTitleInput}
+				on:input={handleTitleInput}
 				on:change={() => void flushCurrentDocument()}
 				on:blur={() => void flushCurrentDocument()}
 				on:keydown={handleDocumentTitleKeydown}
-			/>
+			></textarea>
 		{/if}
 	</div>
 	<div bind:this={element}></div>
