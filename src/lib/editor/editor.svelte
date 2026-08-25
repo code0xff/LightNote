@@ -3,6 +3,7 @@
 
 	import { Editor, type Extensions, type JSONContent } from '@tiptap/core';
 	import { onMount, tick } from 'svelte';
+	import { fade, fly } from 'svelte/transition';
 	import { Button } from '@/lib/components/ui/button';
 	import { toggleMode } from 'mode-watcher';
 	import {
@@ -29,6 +30,7 @@
 		ListOrdered,
 		Merge,
 		MoreHorizontal,
+		PanelLeft,
 		PanelTop,
 		Pencil,
 		Pilcrow,
@@ -47,7 +49,8 @@
 		ScreenShare,
 		ScreenShareOff,
 		MonitorPlay,
-		Underline
+		Underline,
+		X
 	} from 'lucide-svelte';
 	import {
 		addImage,
@@ -55,6 +58,7 @@
 		buildShareUrl,
 		download,
 		DEFAULT_TABLE_SIZE,
+		DOCKED_SIDEBAR_QUERY,
 		endSharing,
 		formatPageTitle,
 		insertTable,
@@ -62,12 +66,14 @@
 		readUploadedDocument,
 		readSharedDocumentHistory,
 		readSharedMetadata,
+		readSidebarOpen,
 		removeSharedDocumentHistory,
 		setLink,
 		startSharing,
 		upsertSharedDocumentHistory,
 		type SharedDocumentReference,
-		validateShareMetadata
+		validateShareMetadata,
+		writeSidebarOpen
 	} from './editor';
 	import {
 		createDocument,
@@ -152,6 +158,15 @@
 	let documentTitleField: HTMLTextAreaElement | undefined;
 	let shareDialogOpen = false;
 	let toolbarOverflowOpen = false;
+
+	/**
+	 * The document list is docked beside the text from `lg` up and slides over it
+	 * below that, so the same open state means two different things: a docked list
+	 * pushes the text aside, an overlaid one hides it. Only the docked state is
+	 * remembered, and the overlay always starts closed.
+	 */
+	let sidebarDocked = false;
+	let sidebarOpen = false;
 
 	let aiSettings: OpenAiSettings = { apiKey: '', model: DEFAULT_OPENAI_MODEL };
 	let aiSettingsOpen = false;
@@ -469,6 +484,35 @@
 			window.alert('Failed to create document');
 			console.error(error);
 		}
+	}
+
+	function toggleSidebar() {
+		sidebarOpen = !sidebarOpen;
+		writeSidebarOpen(localStorage, sidebarDocked, sidebarOpen);
+	}
+
+	/**
+	 * Picking a document is the end of the list's job. While it is docked that
+	 * changes nothing, but an overlaid list is covering the document it just
+	 * opened, so it has to get out of the way.
+	 */
+	function dismissOverlaidSidebar() {
+		if (!sidebarDocked) {
+			sidebarOpen = false;
+		}
+	}
+
+	/**
+	 * Escape closes the overlaid list wherever focus is — it can be the scrim, a
+	 * card, or nothing. A dialog stacked on top answers Escape for itself, so the
+	 * list stays put underneath it.
+	 */
+	function handleSidebarKeydown(event: KeyboardEvent) {
+		if (event.key !== 'Escape' || shareDialogOpen || aiSettingsOpen || toolbarOverflowOpen) {
+			return;
+		}
+
+		dismissOverlaidSidebar();
 	}
 
 	async function switchDocument(documentId: string) {
@@ -1698,6 +1742,19 @@
 	onMount(() => {
 		aiSettings = readOpenAiSettings();
 
+		// Crossing the breakpoint changes what the list *is*, so the state is taken
+		// from the preference again rather than carried over: a list dragged down
+		// to phone width would otherwise stay open on top of the note.
+		const dockQuery = window.matchMedia(DOCKED_SIDEBAR_QUERY);
+		const applyDock = (docked: boolean) => {
+			sidebarDocked = docked;
+			sidebarOpen = readSidebarOpen(localStorage, docked);
+		};
+		const onDockChange = (event: MediaQueryListEvent) => applyDock(event.matches);
+
+		applyDock(dockQuery.matches);
+		dockQuery.addEventListener('change', onDockChange);
+
 		let disposed = false;
 
 		async function initializeEditor() {
@@ -1860,6 +1917,7 @@
 				clearTimeout(saveTimer);
 			}
 			titleObserver?.disconnect();
+			dockQuery.removeEventListener('change', onDockChange);
 			editor?.destroy();
 			(provider as (HocuspocusProvider & { destroy?: () => void }) | undefined)?.destroy?.();
 		};
@@ -1870,11 +1928,24 @@
 	<title>{title}</title>
 </svelte:head>
 
+<svelte:window on:keydown={handleSidebarKeydown} />
+
 {#if editor}
 	<div>
 		<nav
-			class="fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center border-b border-border bg-background px-3 py-3 lg:left-72 lg:w-[calc(100%-18rem)] lg:px-4"
+			class="editor-nav fixed left-0 top-0 z-20 flex h-16 w-full flex-row items-center gap-1 border-b border-border bg-background px-3 py-3 lg:px-4"
+			class:sidebar-open={sidebarOpen}
 		>
+			<!-- The list has a close button of its own, but below `lg` it sits behind
+			     the overlay's scrim, so this is the only way back to it. -->
+			<ToolbarButton
+				icon={PanelLeft}
+				label={sidebarOpen ? 'Hide documents' : 'Show documents'}
+				active={sidebarOpen}
+				on:click={toggleSidebar}
+			/>
+			<div class="mx-1 h-6 w-px shrink-0 bg-border" aria-hidden="true"></div>
+
 			<input
 				type="file"
 				id="selectedFile"
@@ -1964,11 +2035,21 @@
 	</div>
 {/if}
 
-{#if editor}
+{#if editor && sidebarOpen}
+	<!-- Below `lg` the list is over the note, so it needs a way out that does not
+	     depend on the nav it is covering. -->
+	<div
+		class="fixed inset-0 z-20 bg-foreground/20 lg:hidden"
+		role="presentation"
+		transition:fade={{ duration: 180 }}
+		on:click={dismissOverlaidSidebar}
+	></div>
 	<aside
-		class="fixed left-0 top-16 z-10 flex h-28 w-full flex-col border-b border-border bg-background lg:bottom-0 lg:top-0 lg:z-30 lg:h-auto lg:w-72 lg:border-b-0 lg:border-r"
+		class="fixed bottom-0 left-0 top-16 z-30 flex w-72 max-w-[85vw] flex-col border-r border-border bg-background shadow-[8px_0_30px_-12px_rgba(0,0,0,0.25)] lg:top-0 lg:max-w-none lg:shadow-none"
+		aria-label="Documents"
+		transition:fly={{ x: -288, duration: 180 }}
 	>
-		<div class="hidden h-16 items-center justify-between border-b border-border px-4 lg:flex">
+		<div class="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
 			<div class="min-w-0">
 				<div class="truncate text-sm font-semibold">LightNote</div>
 				<div class="text-xs text-muted-foreground">
@@ -1977,14 +2058,20 @@
 						: `${documents.length} documents`}
 				</div>
 			</div>
+			<Button
+				variant="ghost"
+				class="h-7 w-7 shrink-0 px-0"
+				aria-label="Hide documents"
+				on:click={toggleSidebar}
+			>
+				<X class="h-4 w-4" />
+			</Button>
 		</div>
-		<div
-			class="flex flex-1 items-start gap-2 overflow-x-auto p-3 lg:flex-col lg:items-stretch lg:overflow-y-auto"
-		>
+		<div class="flex flex-1 flex-col items-stretch gap-2 overflow-y-auto p-3">
 			{#if isSharingMode}
 				{#each sharedDocuments as document (`${document.endpoint}:${document.workspace}`)}
 					<div
-						class="group grid min-h-16 w-48 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors lg:w-full lg:min-w-0 {isActiveSharedDocument(
+						class="group grid min-h-16 w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {isActiveSharedDocument(
 							document
 						)
 							? 'border-primary bg-secondary'
@@ -1993,11 +2080,12 @@
 						<button
 							type="button"
 							class="min-w-0 text-left"
-							on:click={() => switchSharedDocument(document)}
+							on:click={() => {
+								switchSharedDocument(document);
+								dismissOverlaidSidebar();
+							}}
 						>
-							<span class="line-clamp-2 block min-h-5 break-words font-medium lg:line-clamp-none"
-								>{document.workspace}</span
-							>
+							<span class="block min-h-5 break-words font-medium">{document.workspace}</span>
 							<span class="mt-1 block truncate text-xs text-muted-foreground"
 								>{document.endpoint}</span
 							>
@@ -2018,7 +2106,7 @@
 			{:else}
 				{#each documents as document (document.id)}
 					<div
-						class="group grid min-h-16 w-48 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors lg:w-full lg:min-w-0 {document.id ===
+						class="group grid min-h-16 w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {document.id ===
 						currentDocument?.id
 							? 'border-primary bg-secondary'
 							: 'border-transparent hover:border-border hover:bg-secondary'}"
@@ -2049,8 +2137,7 @@
 								on:click={() => startTitleEditing(document)}
 							>
 								<span class="flex min-h-7 items-start gap-1">
-									<span
-										class="line-clamp-2 min-w-0 break-words py-0.5 font-medium lg:line-clamp-none"
+									<span class="min-w-0 break-words py-0.5 font-medium"
 										>{effectiveDocumentTitle}</span
 									>
 									<Pencil class="mt-1.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -2063,9 +2150,12 @@
 							<button
 								type="button"
 								class="min-w-0 text-left"
-								on:click={() => switchDocument(document.id)}
+								on:click={() => {
+									void switchDocument(document.id);
+									dismissOverlaidSidebar();
+								}}
 							>
-								<span class="line-clamp-2 block min-h-5 break-words font-medium lg:line-clamp-none"
+								<span class="block min-h-5 break-words font-medium"
 									>{document.title || 'Untitled'}</span
 								>
 								<span class="mt-1 block text-xs text-muted-foreground"
@@ -2157,7 +2247,7 @@
 	{/if}
 </div>
 
-<div class="editor-shell pt-44 lg:pt-16" class:ai-panel-open={aiOpen}>
+<div class="editor-shell pt-16" class:ai-panel-open={aiOpen} class:sidebar-open={sidebarOpen}>
 	<div class="document-title px-4 pt-4 md:pt-8 {documentColumnClass}">
 		{#if isSharingMode}
 			<!-- A shared session is named by its workspace, and there is no local

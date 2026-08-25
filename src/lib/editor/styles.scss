@@ -11,6 +11,13 @@
 	transition: padding 180ms ease;
 }
 
+/* The nav gives way to the docked list too, on the same 180ms the list slides. */
+.editor-nav {
+	transition:
+		left 180ms ease,
+		width 180ms ease;
+}
+
 @media (min-width: 640px) {
 	.editor-shell.ai-panel-open {
 		padding-left: 1rem;
@@ -19,13 +26,21 @@
 }
 
 @media (min-width: 1024px) {
-	/* Clears the sidebar, which is fixed and 18rem wide from `lg` up. */
-	.editor-shell {
+	/* Clears the sidebar, which is fixed and 18rem wide from `lg` up — only while
+	   it is open, since collapsing it hands that width back to the text. Below
+	   `lg` the list is an overlay and clears nothing. */
+	.editor-nav.sidebar-open {
+		left: 18rem;
+		width: calc(100% - 18rem);
+	}
+
+	.editor-shell.sidebar-open {
 		padding-left: 18rem;
 	}
 
-	/* Same specificity as the rule above, so this has to stay after it. */
-	.editor-shell.ai-panel-open {
+	/* Same specificity as the `ai-panel-open` rule above, so this has to stay
+	   after it. */
+	.editor-shell.sidebar-open.ai-panel-open {
 		padding-left: calc(18rem + 1rem);
 	}
 }

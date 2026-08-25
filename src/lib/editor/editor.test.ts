@@ -19,10 +19,12 @@ import {
 	readUploadedDocument,
 	removeSharedDocumentHistory,
 	readSharedMetadata,
+	readSidebarOpen,
 	SHARED_DOCUMENTS_KEY,
 	upsertSharedDocumentHistory,
 	validateShareMetadata,
-	validateUploadFile
+	validateUploadFile,
+	writeSidebarOpen
 } from './editor';
 
 describe('editor helpers', () => {
@@ -231,5 +233,40 @@ describe('isCellSelection', () => {
 		const selection = TextSelection.create(doc, cellPositions[0] + 2, cellPositions[0] + 3);
 
 		expect(isCellSelection(selection)).toBe(false);
+	});
+});
+
+describe('document list visibility', () => {
+	function fakeStorage(initial: Record<string, string> = {}) {
+		const values = new Map(Object.entries(initial));
+
+		return {
+			getItem: (key: string) => values.get(key) ?? null,
+			setItem: (key: string, value: string) => void values.set(key, value)
+		} as unknown as Storage;
+	}
+
+	it('opens the docked list by default and remembers it collapsed', () => {
+		const storage = fakeStorage();
+
+		expect(readSidebarOpen(storage, true)).toBe(true);
+
+		writeSidebarOpen(storage, true, false);
+
+		expect(readSidebarOpen(storage, true)).toBe(false);
+	});
+
+	it('starts the overlaid list closed whatever the docked preference is', () => {
+		// Below `lg` the list covers the note, so restoring it open would hide the
+		// document the user came back to read.
+		expect(readSidebarOpen(fakeStorage({ sidebar: 'open' }), false)).toBe(false);
+	});
+
+	it('does not let the overlaid list overwrite the docked preference', () => {
+		const storage = fakeStorage({ sidebar: 'open' });
+
+		writeSidebarOpen(storage, false, false);
+
+		expect(readSidebarOpen(storage, true)).toBe(true);
 	});
 });

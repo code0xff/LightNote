@@ -359,3 +359,33 @@ export function insertTable(editor: Editor) {
 		.insertTable({ ...DEFAULT_TABLE_SIZE })
 		.run();
 }
+
+/**
+ * From `lg` up the document list is docked beside the text; below that it
+ * slides over it. Shared with the CSS breakpoint the shell and nav offsets use.
+ */
+export const DOCKED_SIDEBAR_QUERY = '(min-width: 1024px)';
+
+const SIDEBAR_STORAGE_KEY = 'sidebar';
+
+/**
+ * Collapsing the document list is remembered, but only while it is docked:
+ * below `lg` it covers the note instead of sitting beside it, and restoring it
+ * open would hide the document the user came back to read.
+ */
+export function readSidebarOpen(storage: Storage, docked: boolean): boolean {
+	if (!docked) {
+		return false;
+	}
+
+	return storage.getItem(SIDEBAR_STORAGE_KEY) !== 'closed';
+}
+
+/** Records only the docked state, for the reason in `readSidebarOpen`. */
+export function writeSidebarOpen(storage: Storage, docked: boolean, open: boolean): void {
+	if (!docked) {
+		return;
+	}
+
+	storage.setItem(SIDEBAR_STORAGE_KEY, open ? 'open' : 'closed');
+}
