@@ -796,7 +796,21 @@
 		return editor.state.doc.textBetween(Math.max(0, from - limit), from, '\n').trim();
 	}
 
+	/**
+	 * Re-entering an open panel must not reset it. A run in flight owns the step
+	 * list and the approval prompt, and clearing that prompt would drop the
+	 * resolver its loop is waiting on — the run would hang busy with nothing left
+	 * to answer it. Ending a run is `closeAiPanel`'s job, and it cancels first.
+	 */
 	function openAiPanel() {
+		if (aiOpen) {
+			if (!aiBusy && !aiPendingApproval) {
+				captureSelection();
+			}
+
+			return;
+		}
+
 		aiSettings = readOpenAiSettings();
 		aiApiKeyInput = aiSettings.apiKey;
 		aiModelInput = aiSettings.model;
@@ -810,6 +824,17 @@
 		aiOpen = true;
 		// Cheap insurance: the history may have been pruned or cleared elsewhere.
 		void loadAiHistory();
+	}
+
+	/** The nav's AI button mirrors the document list's: one control, both ways. */
+	function toggleAiPanel() {
+		if (aiOpen) {
+			closeAiPanel();
+
+			return;
+		}
+
+		openAiPanel();
 	}
 
 	function closeAiPanel() {
@@ -1400,11 +1425,17 @@
 	 * buttons. Active/disabled states are computed eagerly and recomputed
 	 * whenever `editor` is reassigned (see the `onTransaction` hook).
 	 */
+	/**
+	 * Every piece of state the bar reflects is a parameter, because the reactive
+	 * statement below only re-runs on what it passes in: a value read from the
+	 * component scope here would render once and then go stale.
+	 */
 	function buildToolbarGroups(
 		activeEditor: Editor,
 		sharing: boolean,
 		activeProvider: HocuspocusProvider | undefined,
-		doc: LightNoteDocument | null
+		doc: LightNoteDocument | null,
+		aiPanelOpen: boolean
 	): ToolbarGroup[] {
 		return [
 			{
@@ -1660,9 +1691,10 @@
 				nodes: [
 					toolbarItem({
 						key: 'ai-writing',
-						label: 'AI writing',
+						label: aiPanelOpen ? 'Hide AI assistant' : 'Show AI assistant',
 						icon: Sparkles,
-						onClick: openAiPanel,
+						active: aiPanelOpen,
+						onClick: toggleAiPanel,
 						primary: true
 					})
 				]
@@ -1715,7 +1747,7 @@
 	}
 
 	$: toolbarGroups = editor
-		? buildToolbarGroups(editor, isSharingMode, provider, currentDocument)
+		? buildToolbarGroups(editor, isSharingMode, provider, currentDocument, aiOpen)
 		: [];
 	// The bar keeps the editing groups; AI and the utility actions are pinned to
 	// its right edge so their position never depends on how wide the rest is.
@@ -2344,7 +2376,6 @@
 		history={aiHistory}
 		continueReason={aiResume?.reason ?? null}
 		runPrompt={aiRunPrompt}
-		onOpen={openAiPanel}
 		onClose={closeAiPanel}
 		onSaveKey={saveAiKeyFromPanel}
 		onAction={runAiAction}

@@ -45,7 +45,6 @@
 	 * live entry cannot read it from `prompt`.
 	 */
 	export let runPrompt = '';
-	export let onOpen: () => void;
 	export let onClose: () => void;
 	export let onSaveKey: () => void;
 	export let onAction: (action: AiAction) => void;
@@ -130,18 +129,10 @@
 	}
 </script>
 
-{#if !open}
-	<div class="fixed bottom-4 right-4 z-30">
-		<Button
-			class="h-10 gap-2 rounded-full px-4 shadow-lg"
-			aria-label="Open AI assistant"
-			on:click={onOpen}
-		>
-			<Sparkles class="h-4 w-4" />
-			<span class="text-sm font-medium">Ask AI</span>
-		</Button>
-	</div>
-{:else}
+<!-- Opening is the toolbar's job, on the bar's right edge, mirroring the
+     document list's toggle on the left. A floating pill here would be a second
+     entry point in a third shape, covering the text it writes into. -->
+{#if open}
 	<aside
 		transition:fly={{ x: 400, duration: 180 }}
 		class="ai-panel fixed bottom-0 right-0 top-16 z-30 flex w-full flex-col border-l border-border bg-background shadow-[-8px_0_30px_-12px_rgba(0,0,0,0.25)] sm:w-[var(--ai-panel-width)]"
