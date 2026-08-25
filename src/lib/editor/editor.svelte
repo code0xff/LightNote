@@ -31,6 +31,7 @@
 		Merge,
 		MoreHorizontal,
 		PanelLeft,
+		PanelLeftClose,
 		PanelTop,
 		Pencil,
 		Pilcrow,
@@ -49,8 +50,7 @@
 		ScreenShare,
 		ScreenShareOff,
 		MonitorPlay,
-		Underline,
-		X
+		Underline
 	} from 'lucide-svelte';
 	import {
 		addImage,
@@ -2064,7 +2064,7 @@
 				aria-label="Hide documents"
 				on:click={toggleSidebar}
 			>
-				<X class="h-4 w-4" />
+				<PanelLeftClose class="h-4 w-4" />
 			</Button>
 		</div>
 		<div class="flex flex-1 flex-col items-stretch gap-2 overflow-y-auto p-3">
