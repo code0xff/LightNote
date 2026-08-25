@@ -7,7 +7,9 @@
    (`documentColumnClass`), so opening or closing the panel changes exactly one
    animating property and the text slides instead of jumping.
    Below `sm` the panel is a full-width overlay, so no reflow is needed. */
-.editor-shell {
+/* Only once the app has painted: see `uiReady` in `editor.svelte`. Animating
+   into the initial layout looked like the document list opening by itself. */
+.editor-shell.ui-ready {
 	transition: padding 180ms ease;
 }
 

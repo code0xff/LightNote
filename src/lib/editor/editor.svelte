@@ -167,6 +167,14 @@
 	 */
 	let sidebarDocked = false;
 	let sidebarOpen = false;
+	/**
+	 * False until the app has painted once. The editor mounts after the first
+	 * paint, so a remembered-open list would animate itself in a beat after the
+	 * page appeared — it read as the list opening on its own rather than as
+	 * having been open all along. Everything that animates the list's width is
+	 * gated on this, and only user toggles are animated.
+	 */
+	let uiReady = false;
 
 	let aiSettings: OpenAiSettings = { apiKey: '', model: DEFAULT_OPENAI_MODEL };
 	let aiSettingsOpen = false;
@@ -484,6 +492,21 @@
 			window.alert('Failed to create document');
 			console.error(error);
 		}
+	}
+
+	/**
+	 * Two frames, not one: `tick` only flushes the DOM, and a class added in the
+	 * same frame as the layout it describes still transitions from the old value.
+	 * Waiting for a painted frame is what makes the first state instant.
+	 */
+	async function markUiReady() {
+		await tick();
+
+		requestAnimationFrame(() => {
+			requestAnimationFrame(() => {
+				uiReady = true;
+			});
+		});
 	}
 
 	function toggleSidebar() {
@@ -1913,6 +1936,7 @@
 				}
 			});
 			editor.commands.focus();
+			void markUiReady();
 		}
 
 		void initializeEditor();
@@ -2073,13 +2097,13 @@
 	<div
 		class="fixed inset-0 z-20 bg-foreground/20 lg:hidden"
 		role="presentation"
-		transition:fade={{ duration: 180 }}
+		transition:fade={{ duration: uiReady ? 180 : 0 }}
 		on:click={dismissOverlaidSidebar}
 	></div>
 	<aside
 		class="fixed bottom-0 left-0 top-16 z-30 flex w-72 max-w-[85vw] flex-col border-r border-border bg-background shadow-[8px_0_30px_-12px_rgba(0,0,0,0.25)] lg:top-0 lg:max-w-none lg:shadow-none"
 		aria-label="Documents"
-		transition:fly={{ x: -288, duration: 180 }}
+		transition:fly={{ x: -288, duration: uiReady ? 180 : 0 }}
 	>
 		<div class="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
 			<div class="min-w-0">
@@ -2279,7 +2303,12 @@
 	{/if}
 </div>
 
-<div class="editor-shell pt-16" class:ai-panel-open={aiOpen} class:sidebar-open={sidebarOpen}>
+<div
+	class="editor-shell pt-16"
+	class:ai-panel-open={aiOpen}
+	class:sidebar-open={sidebarOpen && Boolean(editor)}
+	class:ui-ready={uiReady}
+>
 	<div class="document-title px-4 pt-4 md:pt-8 {documentColumnClass}">
 		{#if isSharingMode}
 			<!-- A shared session is named by its workspace, and there is no local
