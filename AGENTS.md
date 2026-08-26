@@ -45,7 +45,7 @@ Work through features in this order:
 3. **Codex review** — have Codex review the change (via the `codex` plugin, e.g. the `codex:rescue` skill) before it lands.
 4. **Commit & push** — only after the review and the checks above pass. Commit and push are done when the user asks.
 
-`origin/master` also receives commits from the user's other machines and sessions: `git fetch` before starting and again before committing, and rebase rather than force-push if it moved.
+`dev` is the default branch — there is no `master`. `origin/dev` also receives commits from the user's other machines and sessions: `git fetch` before starting and again before committing, and rebase rather than force-push if it moved. Deploys are cut from `dev`; `npm run deploy` publishes the build to the `gh-pages` branch, which is what GitHub Pages serves.
 
 Commit messages **must** use the `type: message` format (e.g. `feat: add AI writing`, `fix: ...`, `docs: ...`, `refactor: ...`, `style: ...`, `chore: ...`, `test: ...`).
 
