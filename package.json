@@ -62,6 +62,7 @@
 		"clsx": "^2.1.0",
 		"lucide-svelte": "^0.316.0",
 		"mode-watcher": "^0.1.2",
+		"svelte-sonner": "^0.3.28",
 		"tailwind-merge": "^2.2.1",
 		"workbox-precaching": "^7.0.0",
 		"y-prosemirror": "^1.2.2"

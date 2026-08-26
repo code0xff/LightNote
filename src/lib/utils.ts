@@ -16,6 +16,17 @@ export function escapeHtml(value: string) {
 		.replace(/'/g, '&#39;');
 }
 
+/**
+ * The message to show for a caught value. A thrown `Error` usually carries the
+ * one worth reading — a failed IndexedDB request or a validation refusal names
+ * itself — so the fallback is only for what is not an `Error` or says nothing.
+ */
+export function describeError(error: unknown, fallback: string): string {
+	const message = error instanceof Error ? error.message.trim() : '';
+
+	return message || fallback;
+}
+
 export function isSupportedUrl(value: string, protocols: string[]) {
 	try {
 		const url = new URL(value);

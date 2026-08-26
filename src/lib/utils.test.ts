@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { escapeHtml, isSupportedUrl } from './utils';
+import { describeError, escapeHtml, isSupportedUrl } from './utils';
 
 describe('escapeHtml', () => {
 	it('escapes HTML-significant characters', () => {
@@ -23,5 +23,16 @@ describe('isSupportedUrl', () => {
 		expect(isSupportedUrl('http://example.com', ['https:'])).toBe(false);
 		expect(isSupportedUrl('javascript:alert(1)', ['http:', 'https:'])).toBe(false);
 		expect(isSupportedUrl('not a url', ['https:'])).toBe(false);
+	});
+});
+
+describe('describeError', () => {
+	it('prefers the thrown message', () => {
+		expect(describeError(new Error('Database is blocked'), 'Failed')).toBe('Database is blocked');
+	});
+
+	it('falls back for a non-Error and for an Error that says nothing', () => {
+		expect(describeError('boom', 'Failed')).toBe('Failed');
+		expect(describeError(new Error('   '), 'Failed')).toBe('Failed');
 	});
 });
