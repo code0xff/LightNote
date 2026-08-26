@@ -27,7 +27,12 @@ export type OpenAiSettings = {
 	model: string;
 };
 
-export type AiAction = 'rewrite' | 'summarize' | 'proofread' | 'continue' | 'prompt';
+/**
+ * The one-shot actions. Free-form instructions go to the agent instead, which is
+ * why there is no `prompt` action here: a suggestion the user then had to insert
+ * by hand was a second way to do what the agent does directly.
+ */
+export type AiAction = 'rewrite' | 'summarize' | 'proofread' | 'continue';
 
 export type SystemMessage = { role: 'system'; content: string };
 
@@ -174,30 +179,6 @@ export function buildMessages(action: AiAction, input: GenerateInput = {}): Prom
 				},
 				{ role: 'user', content: context }
 			];
-		case 'prompt': {
-			if (selection) {
-				return [
-					{
-						role: 'system',
-						content: `You are a writing assistant. Apply the user's instruction only to the provided text. Return a replacement for that text alone; do not repeat, rewrite, or add any surrounding document content. ${SHARED_RULES}`
-					},
-					{
-						role: 'user',
-						content: `Instruction: ${instruction}\n\nText:\n${selection}`
-					}
-				];
-			}
-
-			const userContent = context ? `${instruction}\n\nCurrent context:\n${context}` : instruction;
-
-			return [
-				{
-					role: 'system',
-					content: `You are a writing assistant helping to draft document content. ${SHARED_RULES}`
-				},
-				{ role: 'user', content: userContent }
-			];
-		}
 	}
 }
 

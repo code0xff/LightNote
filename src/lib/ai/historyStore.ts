@@ -24,7 +24,11 @@ export type AiHistoryEntry = {
 	id: string;
 	/** Scope key from `documentHistoryKey` / `sharedHistoryKey`. */
 	documentKey: string;
-	mode: 'ask' | 'agent';
+	/**
+	 * Set for a one-shot action, absent for an agent run. This is the only thing
+	 * that separates the two kinds of entry: an action entry holds a response the
+	 * user can insert again, an agent run holds the steps it applied.
+	 */
 	action?: AiAction;
 	prompt: string;
 	selection?: string;
@@ -111,6 +115,8 @@ function normalizeSteps(value: unknown): AiHistoryStep[] | undefined {
 	return steps.length > 0 ? steps.slice(0, MAX_STEPS) : undefined;
 }
 
+const AI_ACTIONS: readonly AiAction[] = ['rewrite', 'summarize', 'proofread', 'continue'];
+
 /** Drops records that predate a schema change or were written malformed. */
 function normalizeEntry(value: unknown): AiHistoryEntry | null {
 	const entry = value as Partial<AiHistoryEntry> | null;
@@ -119,7 +125,6 @@ function normalizeEntry(value: unknown): AiHistoryEntry | null {
 		!entry ||
 		typeof entry.id !== 'string' ||
 		typeof entry.documentKey !== 'string' ||
-		(entry.mode !== 'ask' && entry.mode !== 'agent') ||
 		typeof entry.createdAt !== 'number'
 	) {
 		return null;
@@ -128,8 +133,10 @@ function normalizeEntry(value: unknown): AiHistoryEntry | null {
 	return {
 		id: entry.id,
 		documentKey: entry.documentKey,
-		mode: entry.mode,
-		action: entry.action,
+		// An unrecognized action is dropped rather than kept: the panel offers
+		// Insert/Replace on action entries, and a record written before the actions
+		// changed would otherwise claim a shape the panel no longer renders.
+		action: AI_ACTIONS.includes(entry.action as AiAction) ? entry.action : undefined,
 		prompt: typeof entry.prompt === 'string' ? entry.prompt : '',
 		selection: typeof entry.selection === 'string' ? entry.selection : undefined,
 		response: typeof entry.response === 'string' ? entry.response : '',

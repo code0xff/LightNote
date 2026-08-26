@@ -268,8 +268,35 @@ describe('runAgent', () => {
 		]);
 	});
 
-	it('denies a mutating tool when approval is refused or unavailable', async () => {
-		const call = { id: 'c1', name: 'insert_at_cursor', args: '{"text":"hi"}' };
+	it('applies an edit to the open document without asking for approval', async () => {
+		// Editor writes are visible where the user is looking and undone with one
+		// keystroke, so they run unasked; the approval prompt is reserved for the
+		// store writes, which are neither.
+		const { fetchImpl } = scriptedFetch([
+			{ calls: [{ id: 'c1', name: 'insert_at_cursor', args: '{"text":"hi"}' }] },
+			{ text: 'inserted' }
+		]);
+		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true }));
+		const requestApproval = vi.fn(async () => true);
+
+		const run = await runAgent('write something', {
+			settings,
+			executeTool,
+			requestApproval,
+			fetchImpl
+		});
+
+		expect(requestApproval).not.toHaveBeenCalled();
+		expect(executeTool).toHaveBeenCalledTimes(1);
+		expect(run.steps[0].status).toBe('done');
+	});
+
+	it('denies a store write when approval is refused or unavailable', async () => {
+		const call = {
+			id: 'c1',
+			name: 'create_document',
+			args: '{"title":"Plan","text":"body"}'
+		};
 		const denied = scriptedFetch([{ calls: [call] }, { text: 'stopped' }]);
 		const executeTool = vi.fn(async (): Promise<AgentToolResult> => ({ ok: true }));
 
@@ -532,7 +559,7 @@ describe('runAgent', () => {
 
 	it('does not run a mutation when cancelled while approval was pending', async () => {
 		const { fetchImpl } = scriptedFetch([
-			{ calls: [{ id: 'c1', name: 'insert_at_cursor', args: '{"text":"hi"}' }] },
+			{ calls: [{ id: 'c1', name: 'create_document', args: '{"title":"P","text":"b"}' }] },
 			{ text: 'done' }
 		]);
 		const controller = new AbortController();

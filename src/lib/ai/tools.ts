@@ -13,8 +13,9 @@ export const AI_TOOL_NAMES = [
 export type AiToolName = (typeof AI_TOOL_NAMES)[number];
 
 /**
- * Tools that change the user's content and therefore require explicit approval
- * before they run.
+ * Tools that change the user's content. Used to guard against applying the same
+ * change twice when a run is continued — not to decide what needs approval; see
+ * `requiresApproval`.
  */
 const MUTATING_TOOLS: readonly AiToolName[] = [
 	'insert_at_cursor',
@@ -191,6 +192,19 @@ export function isAiToolName(name: string): name is AiToolName {
 
 export function isMutatingTool(name: AiToolName): boolean {
 	return MUTATING_TOOLS.includes(name);
+}
+
+/**
+ * Whether a call must be confirmed before it runs. Only the store writes are:
+ * they create or rewrite a whole document, and `create_document` writes one the
+ * user is not even looking at. The three editor-scoped writes are not — they
+ * change the open document through editor commands, so they are visible where
+ * the user is already looking, undone with one ⌘Z, and listed in the step
+ * timeline afterwards. Asking for each of those turned every edit into a
+ * two-step confirmation for a change the editor could already take back.
+ */
+export function requiresApproval(name: AiToolName): boolean {
+	return STORE_WRITE_TOOLS.includes(name);
 }
 
 /** The three independent reasons a tool can be withheld from a run. */

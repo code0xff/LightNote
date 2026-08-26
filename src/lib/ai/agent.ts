@@ -17,6 +17,7 @@ import {
 	isToolAvailable,
 	listAvailableTools,
 	parseToolCalls,
+	requiresApproval,
 	validateToolCall,
 	type AiToolInvocation
 } from './tools';
@@ -92,7 +93,10 @@ export type AgentDeps = {
 	settings: OpenAiSettings;
 	/** Runs a validated tool call. Thrown errors are reported back to the model. */
 	executeTool: (invocation: AiToolInvocation) => Promise<AgentToolResult>;
-	/** Asked before every mutating call. Without it, mutating calls are denied. */
+	/**
+	 * Asked before every call `requiresApproval` covers. Without it, those calls
+	 * are denied — a missing handler must not read as blanket consent.
+	 */
 	requestApproval?: (request: ApprovalRequest) => Promise<boolean>;
 	onEvent?: (event: AgentEvent) => void;
 	isSharingMode?: boolean;
@@ -127,7 +131,7 @@ export function buildAgentSystemPrompt(
 		'- Never touch a document the user did not ask about, and make the smallest change that satisfies the request.',
 		'- Tool text arguments accept a markdown subset (headings, lists, quotes, fenced code, bold, italic, inline code, links, and pipe tables with a header row) which is converted to rich content. Avoid nested lists, keep each table cell to a single line of text, and leave a blank line after a table — column alignment markers are ignored, and text on the line right after a table is read as another row.',
 		'- Tool text is written into the document verbatim, so it must contain document content only. Never put explanations, progress notes, or descriptions of what you changed into a tool argument — those belong in your reply, which the user reads next to the document.',
-		'- Mutating tool calls need the user approval. If one is denied, stop and explain instead of retrying it.',
+		'- Edits to the open document apply immediately. Creating a document, or writing to one the user is not looking at, needs the user approval; if a call is denied, stop and explain instead of retrying it.',
 		'- When the work is done, reply with one or two short sentences describing what changed. Do not repeat the inserted text.'
 	];
 
@@ -493,7 +497,9 @@ export async function runAgent(instruction: string, deps: AgentDeps): Promise<Ag
 					});
 					continue;
 				}
+			}
 
+			if (requiresApproval(invocation.name)) {
 				const approved = deps.requestApproval
 					? await deps.requestApproval({ invocation, description })
 					: false;

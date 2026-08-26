@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { checkAiRequest } from './actions';
+import { checkAgentRequest, checkAiRequest } from './actions';
 
 describe('checkAiRequest', () => {
-	const base = { hasApiKey: true, selection: '', prompt: '' };
+	const base = { hasApiKey: true, selection: '' };
 
 	it('requires an API key first', () => {
 		expect(checkAiRequest({ ...base, action: 'continue', hasApiKey: false })).toEqual({
@@ -21,28 +21,33 @@ describe('checkAiRequest', () => {
 		}
 	});
 
-	it('requires a prompt for the prompt action', () => {
-		expect(checkAiRequest({ ...base, action: 'prompt' })).toEqual({
-			status: 'invalid',
-			message: 'Enter a prompt.'
-		});
-		expect(checkAiRequest({ ...base, action: 'prompt', prompt: 'do it' })).toEqual({
-			status: 'ready'
-		});
-	});
-
-	it('allows continue without selection or prompt', () => {
+	it('allows continue without a selection', () => {
 		expect(checkAiRequest({ ...base, action: 'continue' })).toEqual({ status: 'ready' });
 	});
 
-	it('treats whitespace-only selection and prompt as empty', () => {
+	it('treats a whitespace-only selection as empty', () => {
 		expect(checkAiRequest({ ...base, action: 'rewrite', selection: '   ' })).toEqual({
 			status: 'invalid',
 			message: 'Select some text first.'
 		});
-		expect(checkAiRequest({ ...base, action: 'prompt', prompt: '  ' })).toEqual({
+	});
+});
+
+describe('checkAgentRequest', () => {
+	it('requires an API key first', () => {
+		expect(checkAgentRequest({ hasApiKey: false, instruction: 'do it' })).toEqual({
+			status: 'needs-api-key',
+			message: expect.stringContaining('API key')
+		});
+	});
+
+	it('requires an instruction, ignoring whitespace', () => {
+		expect(checkAgentRequest({ hasApiKey: true, instruction: '  ' })).toEqual({
 			status: 'invalid',
 			message: 'Enter a prompt.'
+		});
+		expect(checkAgentRequest({ hasApiKey: true, instruction: 'do it' })).toEqual({
+			status: 'ready'
 		});
 	});
 });

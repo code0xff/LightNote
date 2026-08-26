@@ -100,7 +100,7 @@
 		type AiAction,
 		type OpenAiSettings
 	} from '$lib/ai/openai';
-	import { checkAiRequest } from '$lib/ai/actions';
+	import { checkAgentRequest, checkAiRequest } from '$lib/ai/actions';
 	import { findExactTextRanges } from '$lib/ai/selection';
 	import { runAgent, type AgentEvent, type AgentStep, type ApprovalRequest } from '$lib/ai/agent';
 	import type { ChatMessage } from '$lib/ai/openai';
@@ -189,7 +189,6 @@
 	let aiError = '';
 	let aiBusy = false;
 	let aiController: AbortController | undefined;
-	let aiMode: 'ask' | 'agent' = 'ask';
 	let aiSteps: AgentStep[] = [];
 	let aiAgentText = '';
 	let aiAutoApprove = false;
@@ -202,6 +201,8 @@
 	let aiHistory: AiHistoryEntry[] = [];
 	/** Instruction of the run in flight; the textarea is cleared on send. */
 	let aiRunPrompt = '';
+	/** The one-shot action in flight, if the run is one; null for an agent run. */
+	let aiRunAction: AiAction | null = null;
 	/**
 	 * Identifies the in-flight request. Cancelling starts a new id so a superseded
 	 * run can no longer touch shared panel state (busy flag, controller, steps).
@@ -882,12 +883,17 @@
 		aiError = '';
 	}
 
+	/**
+	 * A one-shot action: one request, no tools, and the result goes into the
+	 * document as soon as it arrives. The textarea only carries an instruction for
+	 * the actions that read one, so clicking Summarize cannot swallow a sentence
+	 * the user was still writing for the agent.
+	 */
 	async function runAiAction(action: AiAction) {
 		const check = checkAiRequest({
 			action,
 			hasApiKey: Boolean(aiSettings.apiKey),
-			selection: aiSelection,
-			prompt: aiPrompt
+			selection: aiSelection
 		});
 
 		if (check.status === 'needs-api-key') {
@@ -903,12 +909,18 @@
 		}
 
 		const runId = startAiRun();
-		const prompt = aiPrompt;
+		const usesInstruction = action === 'rewrite';
+		const prompt = usesInstruction ? aiPrompt : '';
 		const selection = aiSelection;
-		// The instruction has been taken; the box is free for the next one. The live
-		// entry renders `aiRunPrompt`, and the history entry keeps the text.
-		aiPrompt = '';
+
+		if (usesInstruction) {
+			// The instruction has been taken; the box is free for the next one. The
+			// live entry renders `aiRunPrompt`, and the history entry keeps the text.
+			aiPrompt = '';
+		}
+
 		aiRunPrompt = prompt;
+		aiRunAction = action;
 		// The response belongs to the document the request started from, even if
 		// the user switches documents while it is in flight.
 		const startedFrom = currentHistoryKey();
@@ -923,7 +935,14 @@
 				signal: aiController?.signal
 			});
 
-			await saveAiHistory(startedFrom, { mode: 'ask', action, prompt, selection, response });
+			// Applied before the entry is stored: the edit is the point of the
+			// action, and it must not wait on IndexedDB. A superseded run does not
+			// write — its result belongs to a request the user replaced.
+			if (isCurrentAiRun(runId)) {
+				applyAiResult(response, selection);
+			}
+
+			await saveAiHistory(startedFrom, { action, prompt, selection, response });
 		} catch (error) {
 			if ((error as Error)?.name === 'AbortError') {
 				return;
@@ -936,7 +955,6 @@
 			}
 
 			await saveAiHistory(startedFrom, {
-				mode: 'ask',
 				action,
 				prompt,
 				selection,
@@ -952,9 +970,25 @@
 		aiRunId += 1;
 		aiBusy = true;
 		aiError = '';
+		aiRunAction = null;
 		aiController = new AbortController();
 
 		return aiRunId;
+	}
+
+	/**
+	 * Puts a one-shot result where the action was aimed. Replacing reports its own
+	 * error when the selection moved under it; the entry stays in the history with
+	 * Insert and Replace, so a result is never lost to a failed apply.
+	 */
+	function applyAiResult(text: string, selection: string) {
+		if (selection) {
+			replaceSelectionWithResult(text, selection);
+
+			return;
+		}
+
+		insertResultAtCursor(text);
 	}
 
 	function isCurrentAiRun(runId: number) {
@@ -971,6 +1005,7 @@
 		}
 
 		aiBusy = false;
+		aiRunAction = null;
 		aiController = undefined;
 	}
 
@@ -982,6 +1017,7 @@
 		// Retire the id so the abandoned run cannot touch panel state as it unwinds.
 		aiRunId += 1;
 		aiBusy = false;
+		aiRunAction = null;
 		aiController = undefined;
 	}
 
@@ -1218,11 +1254,9 @@
 		const allowDocumentWideEdits = priorMessages
 			? aiResume?.allowDocumentWideEdits ?? false
 			: aiAllowDocumentWideEdits;
-		const check = checkAiRequest({
-			action: 'prompt',
+		const check = checkAgentRequest({
 			hasApiKey: Boolean(aiSettings.apiKey),
-			selection: aiSelection,
-			prompt: instruction
+			instruction
 		});
 
 		if (check.status !== 'ready') {
@@ -1354,7 +1388,6 @@
 		}
 
 		await saveAiHistory(startedFrom, {
-			mode: 'agent',
 			prompt,
 			selection,
 			response: runText,
@@ -2395,7 +2428,6 @@
 		bind:prompt={aiPrompt}
 		error={aiError}
 		busy={aiBusy}
-		bind:mode={aiMode}
 		steps={aiSteps}
 		agentText={aiAgentText}
 		bind:autoApprove={aiAutoApprove}
@@ -2405,6 +2437,7 @@
 		history={aiHistory}
 		continueReason={aiResume?.reason ?? null}
 		runPrompt={aiRunPrompt}
+		runAction={aiRunAction}
 		onClose={closeAiPanel}
 		onSaveKey={saveAiKeyFromPanel}
 		onAction={runAiAction}

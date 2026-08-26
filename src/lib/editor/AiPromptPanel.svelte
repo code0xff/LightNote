@@ -25,7 +25,6 @@
 	export let prompt = '';
 	export let error = '';
 	export let busy = false;
-	export let mode: 'ask' | 'agent' = 'ask';
 	export let steps: AgentStep[] = [];
 	export let agentText = '';
 	export let autoApprove = false;
@@ -45,6 +44,8 @@
 	 * live entry cannot read it from `prompt`.
 	 */
 	export let runPrompt = '';
+	/** Set while a one-shot action is running, so the live entry can name it. */
+	export let runAction: AiAction | null = null;
 	export let onClose: () => void;
 	export let onSaveKey: () => void;
 	export let onAction: (action: AiAction) => void;
@@ -59,14 +60,14 @@
 	export let onClearHistory: () => void;
 	export let onContinue: () => void;
 
-	const MODE_LABELS = { ask: 'Ask', agent: 'Agent' } as const;
+	/** What an entry that is not a one-shot action is called in the timeline. */
+	const AGENT_LABEL = 'AI';
 
 	const ACTION_LABELS: Record<AiAction, string> = {
 		rewrite: 'Rewrite',
 		summarize: 'Summarize',
 		proofread: 'Proofread',
-		continue: 'Continue writing',
-		prompt: 'Ask'
+		continue: 'Continue writing'
 	};
 
 	/** Keeps the newest entry in view as history grows. */
@@ -78,18 +79,14 @@
 
 	$: hasLiveRun = busy || steps.length > 0 || Boolean(agentText);
 
-	$: canContinue = mode === 'agent' && continueReason !== null;
+	$: canContinue = continueReason !== null;
 
 	function send() {
 		if (busy || !prompt.trim()) {
 			return;
 		}
 
-		if (mode === 'agent') {
-			onRunAgent();
-		} else {
-			onAction('prompt');
-		}
+		onRunAgent();
 	}
 
 	function handlePromptKeydown(event: KeyboardEvent) {
@@ -108,15 +105,7 @@
 	}
 
 	function entryBadge(entry: AiHistoryEntry) {
-		if (entry.mode === 'agent') {
-			return MODE_LABELS.agent;
-		}
-
-		return entry.action ? ACTION_LABELS[entry.action] : MODE_LABELS.ask;
-	}
-
-	function entryLabel(entry: AiHistoryEntry) {
-		return entry.prompt.trim() || entryBadge(entry);
+		return entry.action ? ACTION_LABELS[entry.action] : AGENT_LABEL;
 	}
 
 	function formatTime(value: number) {
@@ -228,7 +217,11 @@
 									</button>
 								</div>
 
-								<p class="whitespace-pre-wrap text-sm">{entryLabel(entry)}</p>
+								<!-- Most action entries carry no instruction, and the badge above
+								     already names them; repeating it here read as a stutter. -->
+								{#if entry.prompt.trim()}
+									<p class="whitespace-pre-wrap text-sm">{entry.prompt}</p>
+								{/if}
 
 								{#if entry.selection}
 									<div
@@ -268,7 +261,7 @@
 									>
 										{entry.response}
 									</div>
-									{#if entry.mode === 'ask'}
+									{#if entry.action}
 										<div class="flex flex-wrap justify-end gap-2">
 											{#if entry.selection && entry.selection === selection}
 												<Button
@@ -296,7 +289,7 @@
 							<article class="grid gap-1.5">
 								<span class="flex items-center gap-1.5 text-xs">
 									<span class="rounded bg-secondary px-1.5 py-0.5 font-medium">
-										{mode === 'agent' ? 'Agent' : 'Ask'}
+										{runAction ? ACTION_LABELS[runAction] : AGENT_LABEL}
 									</span>
 									<span class="text-muted-foreground">now</span>
 								</span>
@@ -341,46 +334,14 @@
 					<div bind:this={historyEnd}></div>
 				</div>
 
-				<!-- Composer -->
+				<!-- Composer. There is no mode to pick first: the buttons are shortcuts
+				     for what the selection makes obvious, and anything else is typed. -->
 				<div class="grid gap-3 border-t border-border p-3">
-					<div class="flex rounded-md border border-border p-0.5" role="tablist">
-						<button
-							type="button"
-							role="tab"
-							aria-selected={mode === 'ask'}
-							class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {mode === 'ask'
-								? 'bg-secondary text-foreground'
-								: 'text-muted-foreground hover:text-foreground'}"
-							on:click={() => (mode = 'ask')}
-						>
-							Ask
-						</button>
-						<button
-							type="button"
-							role="tab"
-							aria-selected={mode === 'agent'}
-							class="flex-1 rounded px-2 py-1 text-xs font-medium transition-colors {mode ===
-							'agent'
-								? 'bg-secondary text-foreground'
-								: 'text-muted-foreground hover:text-foreground'}"
-							on:click={() => (mode = 'agent')}
-						>
-							Agent
-						</button>
-					</div>
-
 					<p class="text-xs text-muted-foreground">
-						{mode === 'agent'
-							? 'Reads your documents and, with your approval, creates and edits them.'
-							: 'Returns text for you to insert — nothing changes until you apply it.'}
+						{selection
+							? 'Changes are written straight into the document — undo with ⌘Z.'
+							: 'Describe what to write or change. Edits go straight into the document — undo with ⌘Z. Creating or rewriting a whole document asks first.'}
 					</p>
-					{#if !selection}
-						<p class="text-xs text-muted-foreground">
-							{mode === 'agent'
-								? 'Describe what to write or change. AI can insert new writing at the cursor or propose an exact replacement for approval.'
-								: 'Select text to request a focused rewrite, or use Agent mode to write into the document.'}
-						</p>
-					{/if}
 
 					{#if selection}
 						<div class="grid gap-2">
@@ -400,30 +361,28 @@
 							>
 								{selection}
 							</div>
-							{#if mode === 'ask'}
-								<div class="flex flex-wrap gap-2">
-									<Button
-										variant="secondary"
-										class="h-8 px-3"
-										disabled={busy}
-										on:click={() => onAction('rewrite')}>Rewrite</Button
-									>
-									<Button
-										variant="secondary"
-										class="h-8 px-3"
-										disabled={busy}
-										on:click={() => onAction('summarize')}>Summarize</Button
-									>
-									<Button
-										variant="secondary"
-										class="h-8 px-3"
-										disabled={busy}
-										on:click={() => onAction('proofread')}>Proofread</Button
-									>
-								</div>
-							{/if}
+							<div class="flex flex-wrap gap-2">
+								<Button
+									variant="secondary"
+									class="h-8 px-3"
+									disabled={busy}
+									on:click={() => onAction('rewrite')}>Rewrite</Button
+								>
+								<Button
+									variant="secondary"
+									class="h-8 px-3"
+									disabled={busy}
+									on:click={() => onAction('summarize')}>Summarize</Button
+								>
+								<Button
+									variant="secondary"
+									class="h-8 px-3"
+									disabled={busy}
+									on:click={() => onAction('proofread')}>Proofread</Button
+								>
+							</div>
 						</div>
-					{:else if mode === 'ask'}
+					{:else}
 						<div class="flex flex-wrap gap-2">
 							<Button
 								variant="secondary"
@@ -458,11 +417,7 @@
 						<div class="flex items-center justify-between gap-2 text-sm text-muted-foreground">
 							<span class="flex items-center gap-2">
 								<Loader2 class="h-4 w-4 animate-spin" />
-								{pendingApproval
-									? 'Waiting for approval...'
-									: mode === 'agent'
-										? 'Working...'
-										: 'Generating...'}
+								{pendingApproval ? 'Waiting for approval...' : 'Working...'}
 							</span>
 							<Button variant="secondary" class="h-8 px-3" on:click={onCancel}>Cancel</Button>
 						</div>
@@ -489,11 +444,9 @@
 						<textarea
 							id="ai-panel-prompt"
 							rows="3"
-							placeholder={mode === 'agent'
-								? 'Ask the agent to draft, rewrite, or reorganize documents...'
-								: selection
-									? 'How should the selection be changed?'
-									: 'Describe what to write...'}
+							placeholder={selection
+								? 'How should the selection be changed?'
+								: 'Draft, rewrite, or reorganize...'}
 							class="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
 							bind:value={prompt}
 							on:keydown={handlePromptKeydown}
@@ -501,40 +454,39 @@
 						<div class="flex items-center justify-between gap-2">
 							<span class="text-xs text-muted-foreground">⌘/Ctrl + Enter to send</span>
 							<Button class="h-8 px-4" disabled={busy || !prompt.trim()} on:click={send}>
-								{mode === 'agent' ? 'Run' : 'Send'}
+								Send
 							</Button>
 						</div>
-						{#if mode === 'agent'}
+						<label class="flex items-center gap-2 text-xs text-muted-foreground">
+							<input
+								type="checkbox"
+								class="h-3.5 w-3.5 rounded border-input"
+								bind:checked={autoApprove}
+							/>
+							Create and rewrite documents without asking, for this session
+						</label>
+						{#if !selection}
 							<label class="flex items-center gap-2 text-xs text-muted-foreground">
 								<input
 									type="checkbox"
 									class="h-3.5 w-3.5 rounded border-input"
-									bind:checked={autoApprove}
+									bind:checked={allowDocumentWideEdits}
 								/>
-								Approve changes automatically for this session
+								Allow full-document replacements for this request
 							</label>
-							{#if !selection}
-								<label class="flex items-center gap-2 text-xs text-muted-foreground">
-									<input
-										type="checkbox"
-										class="h-3.5 w-3.5 rounded border-input"
-										bind:checked={allowDocumentWideEdits}
-									/>
-									Allow full-document replacements for this request
-								</label>
-							{/if}
-							{#if canContinue && continueDocumentWideEdits}
-								<span class="text-xs text-muted-foreground">
-									The stopped run was allowed full-document replacements; Continue resumes it with
-									that permission.
-								</span>
-							{/if}
-							{#if autoApprove}
-								<span class="flex items-start gap-1.5 text-xs text-destructive">
-									<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-									Edits will be applied without asking. Check the step list to see what changed.
-								</span>
-							{/if}
+						{/if}
+						{#if canContinue && continueDocumentWideEdits}
+							<span class="text-xs text-muted-foreground">
+								The stopped run was allowed full-document replacements; Continue resumes it with
+								that permission.
+							</span>
+						{/if}
+						{#if autoApprove}
+							<span class="flex items-start gap-1.5 text-xs text-destructive">
+								<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+								Whole documents will be created and replaced without asking. Check the step list to see
+								what changed.
+							</span>
 						{/if}
 					</div>
 				</div>

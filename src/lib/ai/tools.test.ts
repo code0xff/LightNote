@@ -10,6 +10,7 @@ import {
 	isToolAvailable,
 	listAvailableTools,
 	parseToolCalls,
+	requiresApproval,
 	toolCallPreview,
 	validateToolCall
 } from './tools';
@@ -42,6 +43,17 @@ describe('tool declarations', () => {
 		expect(isMutatingTool('replace_text')).toBe(true);
 		expect(isMutatingTool('list_documents')).toBe(false);
 		expect(isMutatingTool('read_document')).toBe(false);
+	});
+
+	it('asks for approval on store writes only', () => {
+		// The editor writes are undoable and land in front of the user, so they are
+		// applied directly; a document created or rewritten wholesale is not.
+		expect(requiresApproval('create_document')).toBe(true);
+		expect(requiresApproval('update_document')).toBe(true);
+		expect(requiresApproval('insert_at_cursor')).toBe(false);
+		expect(requiresApproval('replace_selection')).toBe(false);
+		expect(requiresApproval('replace_text')).toBe(false);
+		expect(requiresApproval('list_documents')).toBe(false);
 	});
 
 	it('hides store writes in sharing mode but keeps editor writes', () => {

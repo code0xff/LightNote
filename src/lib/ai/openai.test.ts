@@ -94,27 +94,6 @@ describe('prompt building', () => {
 
 		expect(user).toEqual({ role: 'user', content: 'earlier text' });
 	});
-
-	it('applies a prompt to the selection when one is present', () => {
-		const [system, user] = buildMessages('prompt', {
-			selection: 'draft body',
-			instruction: 'translate to Korean'
-		});
-
-		expect(system.content).toContain("Apply the user's instruction");
-		expect(user.content).toContain('translate to Korean');
-		expect(user.content).toContain('draft body');
-	});
-
-	it('generates from an instruction and context when no selection exists', () => {
-		const [, user] = buildMessages('prompt', {
-			instruction: 'write an intro',
-			context: 'previous paragraph'
-		});
-
-		expect(user.content).toContain('write an intro');
-		expect(user.content).toContain('previous paragraph');
-	});
 });
 
 describe('output handling', () => {

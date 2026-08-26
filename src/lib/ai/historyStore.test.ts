@@ -14,11 +14,10 @@ import {
 } from './historyStore';
 import { AI_HISTORY_STORE, withStore } from '$lib/documents/store';
 
-function askEntry(overrides: Partial<AiHistoryInput> = {}): AiHistoryInput {
+function actionEntry(overrides: Partial<AiHistoryInput> = {}): AiHistoryInput {
 	return {
 		documentKey: documentHistoryKey('d1'),
-		mode: 'ask',
-		action: 'prompt',
+		action: 'rewrite',
 		prompt: 'write an intro',
 		response: 'Once upon a time',
 		...overrides
@@ -43,7 +42,7 @@ describe('history keys', () => {
 describe('entry building', () => {
 	it('caps long text and stamps the given time and id', () => {
 		const entry = buildHistoryEntry(
-			askEntry({
+			actionEntry({
 				id: 'fixed',
 				now: 1_000,
 				prompt: 'a'.repeat(20),
@@ -61,13 +60,13 @@ describe('entry building', () => {
 	});
 
 	it('omits an empty selection', () => {
-		expect(buildHistoryEntry(askEntry({ selection: '' })).selection).toBeUndefined();
+		expect(buildHistoryEntry(actionEntry({ selection: '' })).selection).toBeUndefined();
 	});
 
 	it('sorts oldest first', () => {
 		const entries = [
-			buildHistoryEntry(askEntry({ id: 'b', now: 2 })),
-			buildHistoryEntry(askEntry({ id: 'a', now: 1 }))
+			buildHistoryEntry(actionEntry({ id: 'b', now: 2 })),
+			buildHistoryEntry(actionEntry({ id: 'a', now: 1 }))
 		];
 
 		expect(sortHistory(entries).map((entry) => entry.id)).toEqual(['a', 'b']);
@@ -78,10 +77,10 @@ describe('history persistence', () => {
 	it('reads back only the entries of the requested document', async () => {
 		const factory = new IDBFactory();
 
-		await appendAiHistory(askEntry({ id: 'one', now: 1 }), factory);
-		await appendAiHistory(askEntry({ id: 'two', now: 2 }), factory);
+		await appendAiHistory(actionEntry({ id: 'one', now: 1 }), factory);
+		await appendAiHistory(actionEntry({ id: 'two', now: 2 }), factory);
 		await appendAiHistory(
-			askEntry({ id: 'other', now: 3, documentKey: documentHistoryKey('d2') }),
+			actionEntry({ id: 'other', now: 3, documentKey: documentHistoryKey('d2') }),
 			factory
 		);
 
@@ -101,7 +100,6 @@ describe('history persistence', () => {
 		await appendAiHistory(
 			{
 				documentKey: documentHistoryKey('d1'),
-				mode: 'agent',
 				prompt: 'draft a plan',
 				response: 'created it',
 				steps: [{ description: 'Create a new document "Plan"', status: 'done' }],
@@ -115,7 +113,7 @@ describe('history persistence', () => {
 		const [entry] = await listAiHistory(documentHistoryKey('d1'), factory);
 
 		expect(entry).toMatchObject({
-			mode: 'agent',
+			action: undefined,
 			steps: [{ description: 'Create a new document "Plan"', status: 'done' }],
 			error: 'stopped early'
 		});
@@ -125,7 +123,7 @@ describe('history persistence', () => {
 		const factory = new IDBFactory();
 
 		for (let index = 0; index < 5; index += 1) {
-			await appendAiHistory(askEntry({ id: `e${index}`, now: index }), factory, 3);
+			await appendAiHistory(actionEntry({ id: `e${index}`, now: index }), factory, 3);
 		}
 
 		expect((await listAiHistory(documentHistoryKey('d1'), factory)).map((e) => e.id)).toEqual([
@@ -138,10 +136,10 @@ describe('history persistence', () => {
 	it('deletes a single entry and clears a whole document', async () => {
 		const factory = new IDBFactory();
 
-		await appendAiHistory(askEntry({ id: 'one', now: 1 }), factory);
-		await appendAiHistory(askEntry({ id: 'two', now: 2 }), factory);
+		await appendAiHistory(actionEntry({ id: 'one', now: 1 }), factory);
+		await appendAiHistory(actionEntry({ id: 'two', now: 2 }), factory);
 		await appendAiHistory(
-			askEntry({ id: 'other', now: 3, documentKey: documentHistoryKey('d2') }),
+			actionEntry({ id: 'other', now: 3, documentKey: documentHistoryKey('d2') }),
 			factory
 		);
 
@@ -161,9 +159,9 @@ describe('history persistence', () => {
 	it('returns the pruned list so callers never show deleted entries', async () => {
 		const factory = new IDBFactory();
 
-		await appendAiHistory(askEntry({ id: 'e0', now: 0 }), factory, 2);
-		await appendAiHistory(askEntry({ id: 'e1', now: 1 }), factory, 2);
-		const { entry, entries } = await appendAiHistory(askEntry({ id: 'e2', now: 2 }), factory, 2);
+		await appendAiHistory(actionEntry({ id: 'e0', now: 0 }), factory, 2);
+		await appendAiHistory(actionEntry({ id: 'e1', now: 1 }), factory, 2);
+		const { entry, entries } = await appendAiHistory(actionEntry({ id: 'e2', now: 2 }), factory, 2);
 
 		expect(entry.id).toBe('e2');
 		expect(entries.map((e) => e.id)).toEqual(['e1', 'e2']);
@@ -201,7 +199,7 @@ describe('history persistence', () => {
 
 	it('caps step and error text', async () => {
 		const entry = buildHistoryEntry(
-			askEntry({
+			actionEntry({
 				id: 'long',
 				now: 1,
 				error: 'e'.repeat(600),
@@ -217,7 +215,7 @@ describe('history persistence', () => {
 	it('clears records that are too malformed to read', async () => {
 		const factory = new IDBFactory();
 
-		await appendAiHistory(askEntry({ id: 'good', now: 1 }), factory);
+		await appendAiHistory(actionEntry({ id: 'good', now: 1 }), factory);
 		await withStore(
 			AI_HISTORY_STORE,
 			'readwrite',
@@ -239,7 +237,7 @@ describe('history persistence', () => {
 	it('skips malformed records instead of failing the read', async () => {
 		const factory = new IDBFactory();
 
-		await appendAiHistory(askEntry({ id: 'good', now: 1 }), factory);
+		await appendAiHistory(actionEntry({ id: 'good', now: 1 }), factory);
 		await withStore(
 			AI_HISTORY_STORE,
 			'readwrite',
