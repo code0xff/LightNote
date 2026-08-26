@@ -18,6 +18,27 @@ export type SharedDocumentReference = ShareMetadata & {
 };
 
 export const SHARED_DOCUMENTS_KEY = 'sharedDocuments';
+
+const STARTUP_NOTICE_KEY = 'notice';
+
+/**
+ * Hands a message to the page that is about to replace this one. A failed share
+ * ends in `location.replace`, which would take a toast with it — the message
+ * only means anything on the other side of that reload. `sessionStorage`, so it
+ * cannot outlive the tab and greet the user again tomorrow.
+ */
+export function stashStartupNotice(storage: Storage, message: string) {
+	storage.setItem(STARTUP_NOTICE_KEY, message);
+}
+
+/** Reads the handed-over message and clears it, so it is shown exactly once. */
+export function takeStartupNotice(storage: Storage): string {
+	const message = storage.getItem(STARTUP_NOTICE_KEY) ?? '';
+
+	storage.removeItem(STARTUP_NOTICE_KEY);
+
+	return message;
+}
 const MAX_SHARED_DOCUMENTS = 25;
 
 export function validateShareMetadata(endpoint: string, workspace: string): ShareMetadata {
@@ -224,26 +245,22 @@ export async function readUploadedDocument(files: FileList | undefined) {
 	};
 }
 
-export function download(editor: Editor, preferredName?: string) {
+/** The name the download dialog opens on. */
+export function suggestedDownloadName(preferredName?: string) {
 	const searchParams = new URLSearchParams(location.search);
-	const defaultName = getDefaultDownloadName(
+
+	return getDefaultDownloadName(
 		preferredName ?? searchParams.get('workspace'),
 		localStorage.getItem('edited')
 	);
-	const promptedName = window.prompt('Please insert file name', defaultName);
+}
 
-	if (promptedName === null) {
-		return;
-	}
-
-	let fileName: string;
-	try {
-		fileName = normalizeDownloadName(promptedName);
-	} catch (error) {
-		window.alert(error instanceof Error ? error.message : 'Invalid file name');
-		return;
-	}
-
+/**
+ * Writes the file. The name arrives already normalized: collecting it and
+ * rejecting a bad one belong to the dialog, which can show the reason next to
+ * the box the user has to fix.
+ */
+export function download(editor: Editor, fileName: string) {
 	localStorage.setItem('edited', fileName);
 
 	const blob = new Blob([createExportHtml(editor.getHTML(), fileName.replace(/\.html?$/i, ''))], {
@@ -258,34 +275,102 @@ export function download(editor: Editor, preferredName?: string) {
 	window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
 }
 
-export async function upload(editor: Editor, files: FileList | undefined) {
-	try {
-		const document = await readUploadedDocument(files);
+export type UrlInsertKind = 'link' | 'image' | 'youtube';
 
-		localStorage.setItem('edited', normalizeDownloadName(document.sourceFileName));
-		editor.commands.setContent(document.content);
-	} catch (error) {
-		window.alert(error instanceof Error ? error.message : 'Failed to upload file');
-		console.error(error);
+export type UrlInsertSpec = {
+	title: string;
+	description: string;
+	label: string;
+	placeholder: string;
+	submitLabel: string;
+	/** Everything else is rejected, so a `javascript:` URL never reaches Tiptap. */
+	protocols: string[];
+	invalidMessage: string;
+};
+
+/**
+ * What the URL dialog says and accepts for each kind. These used to be
+ * `window.prompt` strings: a native prompt cannot be styled, cannot show the
+ * error next to the box it belongs to, and on submit either applied the change
+ * or replaced itself with an `alert` that threw the typed URL away.
+ */
+export const URL_INSERTS: Record<UrlInsertKind, UrlInsertSpec> = {
+	link: {
+		title: 'Link',
+		description: 'Paste the address to link to. Leaving the box empty removes the link.',
+		label: 'URL',
+		placeholder: 'https://example.com',
+		submitLabel: 'Apply',
+		protocols: ['http:', 'https:', 'mailto:', 'tel:'],
+		invalidMessage: 'Enter a full http, https, mailto, or tel address.'
+	},
+	image: {
+		title: 'Image',
+		description: 'Paste the address of the image to insert.',
+		label: 'Image URL',
+		placeholder: 'https://example.com/image.png',
+		submitLabel: 'Insert',
+		protocols: ['http:', 'https:', 'data:'],
+		invalidMessage: 'Enter a full http, https, or data address.'
+	},
+	youtube: {
+		title: 'YouTube video',
+		description: 'Paste the address of the video to embed.',
+		label: 'Video URL',
+		placeholder: 'https://www.youtube.com/watch?v=...',
+		submitLabel: 'Insert',
+		protocols: ['http:', 'https:'],
+		invalidMessage: 'Enter a full http or https address.'
 	}
+};
+
+export type UrlInsertCheck =
+	/** Only a link can be submitted empty, and doing so removes it. */
+	{ status: 'clear' } | { status: 'invalid'; message: string } | { status: 'ok'; url: string };
+
+export function checkUrlInsert(kind: UrlInsertKind, value: string): UrlInsertCheck {
+	const url = value.trim();
+
+	if (!url) {
+		return kind === 'link' ? { status: 'clear' } : { status: 'invalid', message: 'Enter a URL.' };
+	}
+
+	if (!isSupportedUrl(url, URL_INSERTS[kind].protocols)) {
+		return { status: 'invalid', message: URL_INSERTS[kind].invalidMessage };
+	}
+
+	return { status: 'ok', url };
 }
 
-export function setLink(editor: Editor) {
-	const previousUrl = editor.getAttributes('link').href;
-	const url = window.prompt('Please insert link url', previousUrl);
-
-	if (url === null) {
+/**
+ * Applies a checked URL. Kept apart from `checkUrlInsert` so the dialog can
+ * report an invalid address without closing — the typed URL stays on screen to
+ * be corrected instead of being lost with the prompt that collected it.
+ */
+export function applyUrlInsert(editor: Editor, kind: UrlInsertKind, url: string) {
+	if (kind === 'image') {
+		editor.chain().focus().setImage({ src: url }).run();
 		return;
 	}
-	if (url.trim().length === 0) {
+
+	if (kind === 'youtube') {
+		editor.commands.setYoutubeVideo({ src: url, width: 640, height: 480 });
+		return;
+	}
+
+	if (!url) {
 		editor.chain().focus().extendMarkRange('link').unsetLink().run();
 		return;
 	}
-	if (!isSupportedUrl(url, ['http:', 'https:', 'mailto:', 'tel:'])) {
-		window.alert('Please insert a valid URL');
-		return;
-	}
+
 	editor.chain().focus().extendMarkRange('link').setLink({ href: url, target: '_self' }).run();
+}
+
+/** The address the link dialog opens with, so editing a link is not retyping it. */
+export function currentLinkUrl(editor: Editor): string {
+	const href = editor.getAttributes('link').href;
+
+	return typeof href === 'string' ? href : '';
 }
 
 export function clearContent(editor: Editor) {
@@ -293,50 +378,20 @@ export function clearContent(editor: Editor) {
 	editor.commands.focus();
 }
 
-export function addImage(editor: Editor) {
-	const url = window.prompt('Please insert image url');
-	if (!url || url.trim().length === 0) {
-		return;
-	}
-	if (!isSupportedUrl(url, ['http:', 'https:', 'data:'])) {
-		window.alert('Please insert a valid image URL');
-		return;
-	}
-	editor.chain().focus().setImage({ src: url }).run();
-}
-
+/** Throws on invalid metadata so the caller can report it where it was typed. */
 export function startSharing(endpoint: string, workspace: string) {
-	try {
-		const metadata = validateShareMetadata(endpoint, workspace);
-		location.replace(buildShareUrl(location.origin, location.pathname, metadata));
-	} catch (error) {
-		window.alert(error instanceof Error ? error.message : 'Failed to start sharing');
-		console.error(error);
-	}
+	const metadata = validateShareMetadata(endpoint, workspace);
+
+	location.replace(buildShareUrl(location.origin, location.pathname, metadata));
 }
 
 export function endSharing(provider: HocuspocusProvider | undefined) {
 	if (provider) {
-		window.alert('Disconnecting...');
+		// The old `alert('Disconnecting...')` only mattered because it blocked: the
+		// reload below is the feedback, and a toast would be gone before it is read.
 		localStorage.removeItem('connected');
 		location.replace(`${location.origin}${location.pathname}`);
 	}
-}
-
-export function addYoutube(editor: Editor) {
-	const url = window.prompt('Please insert youtube url');
-	if (!url || url.trim().length === 0) {
-		return;
-	}
-	if (!isSupportedUrl(url, ['http:', 'https:'])) {
-		window.alert('Please insert a valid YouTube URL');
-		return;
-	}
-	editor.commands.setYoutubeVideo({
-		src: url,
-		width: 640,
-		height: 480
-	});
 }
 
 /**

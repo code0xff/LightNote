@@ -14,7 +14,9 @@ The editor decides its **runtime mode once, in `onMount`**, based on URL query p
 
 ## UI components
 
-`src/lib/components/ui/` holds shadcn-style wrappers over `bits-ui` (Button, Dialog, Input, Label). Reuse these rather than raw elements; icons come from `lucide-svelte`. New dialogs follow the pattern in `editor.svelte` (e.g. the Share and AI dialogs).
+`src/lib/components/ui/` holds shadcn-style wrappers over `bits-ui` (Button, Dialog, Input, Label, Popover) plus `Toaster`, a wrapper over `svelte-sonner`. Reuse these rather than raw elements; icons come from `lucide-svelte`. New dialogs follow the pattern in `editor.svelte` (e.g. the Share and AI dialogs).
+
+The `Toaster` is mounted once, in `+layout.svelte`, and configured there rather than at any call site — `toast(...)` reaches it from anywhere. **The app has no `window.alert`, `confirm`, or `prompt`**; what replaced each of them, and how to choose between a dialog and a toast, is in [editor-ui.md](editor-ui.md#dialogs-and-toasts).
 
 ## Build / bundle notes
 

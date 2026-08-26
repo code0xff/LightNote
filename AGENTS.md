@@ -63,7 +63,7 @@ A new area of the codebase gets a new file in `docs/` plus one row here.
 | Doc                                          | What it covers                                                                             | Read it when                                                      |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
 | [docs/architecture.md](docs/architecture.md) | Runtime modes (normal vs. sharing), the UI component layer, build/bundle and path settings | Wiring anything new into the app, or touching the build           |
-| [docs/editor-ui.md](docs/editor-ui.md)       | Document title, the sliding document list, toolbar and bubble menus, tables                | Changing layout or chrome around the editor                       |
+| [docs/editor-ui.md](docs/editor-ui.md)       | Document title, the sliding document list, toolbar and bubble menus, dialogs and toasts    | Changing layout or chrome around the editor                       |
 | [docs/persistence.md](docs/persistence.md)   | IndexedDB schema and upgrade failure modes, `localStorage` keys, debounced saves           | Storing anything, or changing what a document is                  |
 | [docs/ai.md](docs/ai.md)                     | One-shot actions, the agent loop and its tools, per-document AI history                    | Touching `src/lib/ai/**` or the AI panel                          |
 | [docs/testing.md](docs/testing.md)           | Which module owns which logic, and the injection points tests rely on                      | Adding a feature — decide where the logic lives before writing it |

@@ -53,10 +53,12 @@
 		Underline
 	} from 'lucide-svelte';
 	import {
-		addImage,
-		addYoutube,
+		applyUrlInsert,
 		buildShareUrl,
+		checkUrlInsert,
+		currentLinkUrl,
 		download,
+		normalizeDownloadName,
 		DEFAULT_TABLE_SIZE,
 		DOCKED_SIDEBAR_QUERY,
 		endSharing,
@@ -68,10 +70,14 @@
 		readSharedMetadata,
 		readSidebarOpen,
 		removeSharedDocumentHistory,
-		setLink,
+		stashStartupNotice,
 		startSharing,
+		suggestedDownloadName,
+		takeStartupNotice,
 		upsertSharedDocumentHistory,
 		type SharedDocumentReference,
+		URL_INSERTS,
+		type UrlInsertKind,
 		validateShareMetadata,
 		writeSidebarOpen
 	} from './editor';
@@ -118,6 +124,10 @@
 		type AiHistoryInput
 	} from '$lib/ai/historyStore';
 	import AiSettingsDialog from './AiSettingsDialog.svelte';
+	import ConfirmDialog from './ConfirmDialog.svelte';
+	import PromptDialog from './PromptDialog.svelte';
+	import { describeError } from '$lib/utils';
+	import { toast } from 'svelte-sonner';
 	import AiPromptPanel from './AiPromptPanel.svelte';
 	import ToolbarButton from './ToolbarButton.svelte';
 	import ToolbarMenu from './ToolbarMenu.svelte';
@@ -157,6 +167,30 @@
 	let editingTitleDocumentId: string | null = null;
 	let documentTitleField: HTMLTextAreaElement | undefined;
 	let shareDialogOpen = false;
+	/**
+	 * What the prompt dialog is asking for, or null while it is closed. `submit`
+	 * returns the message to show when the answer is refused, so a rejected value
+	 * keeps the dialog open on the text that has to be fixed.
+	 */
+	let promptRequest: {
+		title: string;
+		description: string;
+		label: string;
+		placeholder: string;
+		submitLabel: string;
+		submit: (value: string) => string | null;
+	} | null = null;
+	let promptValue = '';
+	let promptError = '';
+	/** The pending question, with the resolver the caller is waiting on. */
+	let confirmRequest: {
+		title: string;
+		description: string;
+		confirmLabel: string;
+		cancelLabel: string;
+		destructive: boolean;
+		resolve: (confirmed: boolean) => void;
+	} | null = null;
 	let toolbarOverflowOpen = false;
 
 	/**
@@ -490,7 +524,7 @@
 			// in an empty body the user has nothing to say in yet.
 			await focusDocumentTitle();
 		} catch (error) {
-			window.alert('Failed to create document');
+			toast.error('Failed to create document');
 			console.error(error);
 		}
 	}
@@ -532,11 +566,143 @@
 	 * list stays put underneath it.
 	 */
 	function handleSidebarKeydown(event: KeyboardEvent) {
-		if (event.key !== 'Escape' || shareDialogOpen || aiSettingsOpen || toolbarOverflowOpen) {
+		if (
+			event.key !== 'Escape' ||
+			shareDialogOpen ||
+			aiSettingsOpen ||
+			toolbarOverflowOpen ||
+			promptRequest !== null ||
+			confirmRequest !== null
+		) {
 			return;
 		}
 
 		dismissOverlaidSidebar();
+	}
+
+	/**
+	 * A stale error is cleared on open rather than on close, because the dialog
+	 * can also be dismissed by Escape or by the overlay.
+	 */
+	function openPrompt(
+		request: Omit<NonNullable<typeof promptRequest>, 'submit'>,
+		initialValue: string,
+		submit: (value: string) => string | null
+	) {
+		promptValue = initialValue;
+		promptError = '';
+		promptRequest = { ...request, submit };
+	}
+
+	function submitPrompt() {
+		if (!promptRequest) {
+			return;
+		}
+
+		const error = promptRequest.submit(promptValue);
+
+		// Staying open on a refused answer is the point of replacing the native
+		// prompt, which closed before its alert could say what was wrong.
+		if (error) {
+			promptError = error;
+			return;
+		}
+
+		closePrompt();
+	}
+
+	function closePrompt() {
+		promptRequest = null;
+	}
+
+	/** The link dialog opens on the address already there, so editing is not retyping. */
+	function openUrlDialog(kind: UrlInsertKind) {
+		openPrompt(
+			URL_INSERTS[kind],
+			kind === 'link' && editor ? currentLinkUrl(editor) : '',
+			(value) => {
+				if (!editor) {
+					return null;
+				}
+
+				const check = checkUrlInsert(kind, value);
+
+				if (check.status === 'invalid') {
+					return check.message;
+				}
+
+				applyUrlInsert(editor, kind, check.status === 'ok' ? check.url : '');
+
+				return null;
+			}
+		);
+	}
+
+	function openDownloadDialog(activeEditor: Editor, preferredName?: string) {
+		openPrompt(
+			{
+				title: 'Save as HTML',
+				description: 'The whole document is written to one file, styles included.',
+				label: 'File name',
+				placeholder: 'note.html',
+				submitLabel: 'Save'
+			},
+			suggestedDownloadName(preferredName),
+			(value) => {
+				try {
+					download(activeEditor, normalizeDownloadName(value));
+				} catch (error) {
+					console.error(error);
+
+					return describeError(error, 'Invalid file name');
+				}
+
+				return null;
+			}
+		);
+	}
+
+	/**
+	 * Asks the question and waits for the answer, the way `window.confirm` used to
+	 * read at the call site. A second question replaces the first and answers it
+	 * "no", so no caller is left awaiting a dialog that is no longer on screen.
+	 */
+	function askConfirm(request: {
+		title: string;
+		description: string;
+		confirmLabel?: string;
+		cancelLabel?: string;
+		destructive?: boolean;
+	}): Promise<boolean> {
+		confirmRequest?.resolve(false);
+
+		return new Promise((resolve) => {
+			confirmRequest = {
+				confirmLabel: 'Confirm',
+				cancelLabel: 'Cancel',
+				destructive: false,
+				...request,
+				resolve
+			};
+		});
+	}
+
+	function settleConfirm(confirmed: boolean) {
+		confirmRequest?.resolve(confirmed);
+		confirmRequest = null;
+	}
+
+	/**
+	 * The dialog stays open on a bad endpoint: on success the page navigates away,
+	 * so closing it first would only flash the editor before the reload.
+	 */
+	function connectToShare() {
+		try {
+			startSharing(_endpoint, _workspace);
+		} catch (error) {
+			toast.error(describeError(error, 'Failed to start sharing'));
+			console.error(error);
+		}
 	}
 
 	async function switchDocument(documentId: string) {
@@ -552,13 +718,20 @@
 				setActiveDocument(document);
 			}
 		} catch (error) {
-			window.alert('Failed to open document');
+			toast.error('Failed to open document');
 			console.error(error);
 		}
 	}
 
 	async function deleteDocumentById(documentToDelete: LightNoteDocument) {
-		if (!window.confirm(`Delete "${documentToDelete.title || 'Untitled'}"?`)) {
+		const confirmed = await askConfirm({
+			title: `Delete "${documentToDelete.title || 'Untitled'}"?`,
+			description: 'The document and its AI history are removed from this browser.',
+			confirmLabel: 'Delete',
+			destructive: true
+		});
+
+		if (!confirmed) {
 			return;
 		}
 
@@ -586,7 +759,7 @@
 				setActiveDocument(remainingDocuments[0]);
 			}
 		} catch (error) {
-			window.alert('Failed to delete document');
+			toast.error('Failed to delete document');
 			console.error(error);
 		}
 	}
@@ -603,8 +776,16 @@
 		location.replace(buildShareUrl(location.origin, location.pathname, document));
 	}
 
-	function deleteSharedDocumentByReference(document: SharedDocumentReference) {
-		if (!window.confirm(`Remove "${document.workspace}" from recent shared documents?`)) {
+	async function deleteSharedDocumentByReference(document: SharedDocumentReference) {
+		const confirmed = await askConfirm({
+			title: `Remove "${document.workspace}"?`,
+			description:
+				'It only leaves this list of recent shared documents. Nothing on the relay changes.',
+			confirmLabel: 'Remove',
+			destructive: true
+		});
+
+		if (!confirmed) {
 			return;
 		}
 
@@ -623,7 +804,7 @@
 			await refreshDocuments();
 			setActiveDocument(document);
 		} catch (error) {
-			window.alert(error instanceof Error ? error.message : 'Failed to upload file');
+			toast.error(describeError(error, 'Failed to upload file'));
 			console.error(error);
 		}
 	}
@@ -726,7 +907,9 @@
 		}
 
 		databaseNoticeShown = true;
-		window.alert(message);
+		// It stays until dismissed: this one describes a condition the user has to
+		// act on, not something that just happened.
+		toast.error(message, { duration: Number.POSITIVE_INFINITY });
 	}
 
 	async function loadAiHistory() {
@@ -798,7 +981,18 @@
 	async function clearAiHistoryForDocument() {
 		const key = currentHistoryKey();
 
-		if (!key || !window.confirm('Clear the AI history for this document?')) {
+		if (!key) {
+			return;
+		}
+
+		const confirmed = await askConfirm({
+			title: 'Clear the AI history?',
+			description: 'Every entry for this document goes; the document itself is untouched.',
+			confirmLabel: 'Clear',
+			destructive: true
+		});
+
+		if (!confirmed) {
 			return;
 		}
 
@@ -1702,7 +1896,7 @@
 								key: 'link',
 								label: 'Link',
 								icon: Link2,
-								onClick: () => setLink(activeEditor),
+								onClick: () => openUrlDialog('link'),
 								active: activeEditor.isActive('link')
 							},
 							{
@@ -1716,13 +1910,13 @@
 								key: 'image',
 								label: 'Image',
 								icon: ImagePlus,
-								onClick: () => addImage(activeEditor)
+								onClick: () => openUrlDialog('image')
 							},
 							{
 								key: 'youtube',
 								label: 'YouTube video',
 								icon: MonitorPlay,
-								onClick: () => addYoutube(activeEditor)
+								onClick: () => openUrlDialog('youtube')
 							},
 							{
 								key: 'table',
@@ -1763,7 +1957,7 @@
 						key: 'download',
 						label: 'Download as HTML',
 						icon: FileDown,
-						onClick: () => download(activeEditor, doc?.title)
+						onClick: () => openDownloadDialog(activeEditor, doc?.title)
 					}),
 					toolbarItem({
 						key: 'import',
@@ -1830,6 +2024,14 @@
 	onMount(() => {
 		aiSettings = readOpenAiSettings();
 
+		// Left by the page that reloaded into this one, e.g. a share that failed to
+		// connect. Read before anything can fail here, so one notice cannot bury it.
+		const startupNotice = takeStartupNotice(sessionStorage);
+
+		if (startupNotice) {
+			toast.error(startupNotice);
+		}
+
 		// Crossing the breakpoint changes what the list *is*, so the state is taken
 		// from the preference again rather than carried over: a list dragged down
 		// to phone width would otherwise stay open on top of the note.
@@ -1889,7 +2091,9 @@
 
 							localStorage.removeItem('connected');
 							sessionStorage.removeItem(reconnectKey);
-							window.alert(`Failed to connect to ${endpoint}/${workspace}`);
+							// Handed to the page this one is about to be replaced by; a toast
+							// shown here would be gone before it could be read.
+							stashStartupNotice(sessionStorage, `Failed to connect to ${endpoint}/${workspace}`);
 							location.replace(`${location.origin}${location.pathname}`);
 						},
 						connect: false
@@ -1905,9 +2109,12 @@
 					});
 					await loadAiHistory();
 				} catch (error) {
-					const message = error instanceof Error ? error.message : 'Unknown error';
+					const message = describeError(error, 'Unknown error');
 
-					window.alert(`Failed to start sharing with ${location.search}: ${message}`);
+					stashStartupNotice(
+						sessionStorage,
+						`Failed to start sharing with ${location.search}: ${message}`
+					);
 					console.error(error);
 
 					localStorage.removeItem('connected');
@@ -1930,7 +2137,7 @@
 					documents = await listDocuments();
 					await loadAiHistory();
 				} catch (error) {
-					window.alert(error instanceof Error ? error.message : 'Failed to load documents');
+					toast.error(describeError(error, 'Failed to load documents'));
 					console.error(error);
 					return;
 				}
@@ -2390,7 +2597,7 @@
 					on:keydown={(e) => {
 						if (e.code === 'Enter') {
 							e.preventDefault();
-							startSharing(_endpoint, _workspace);
+							connectToShare();
 						}
 					}}
 				/>
@@ -2405,19 +2612,31 @@
 					on:keydown={(e) => {
 						if (e.code === 'Enter') {
 							e.preventDefault();
-							startSharing(_endpoint, _workspace);
+							connectToShare();
 						}
 					}}
 				/>
 			</div>
 		</div>
 		<Dialog.Footer>
-			<Button class="w-full" variant="outline" on:click={() => startSharing(_endpoint, _workspace)}
-				>Connect</Button
-			>
+			<Button class="w-full" variant="outline" on:click={connectToShare}>Connect</Button>
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>
+
+<PromptDialog
+	request={promptRequest}
+	bind:value={promptValue}
+	error={promptError}
+	onSubmit={submitPrompt}
+	onClose={closePrompt}
+/>
+
+<ConfirmDialog
+	request={confirmRequest}
+	onConfirm={() => settleConfirm(true)}
+	onCancel={() => settleConfirm(false)}
+/>
 
 {#if editor}
 	<AiPromptPanel

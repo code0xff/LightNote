@@ -9,6 +9,7 @@ import { TextSelection } from '@tiptap/pm/state';
 import { CellSelection } from '@tiptap/pm/tables';
 import {
 	buildShareUrl,
+	checkUrlInsert,
 	createExportHtml,
 	extractEditorContent,
 	formatPageTitle,
@@ -268,5 +269,39 @@ describe('document list visibility', () => {
 		writeSidebarOpen(storage, false, false);
 
 		expect(readSidebarOpen(storage, true)).toBe(true);
+	});
+});
+
+describe('checkUrlInsert', () => {
+	it('accepts the protocols each kind can render', () => {
+		expect(checkUrlInsert('link', 'https://example.com')).toEqual({
+			status: 'ok',
+			url: 'https://example.com'
+		});
+		expect(checkUrlInsert('link', 'mailto:a@b.com').status).toBe('ok');
+		expect(checkUrlInsert('image', 'data:image/png;base64,AAA').status).toBe('ok');
+		expect(checkUrlInsert('youtube', 'https://youtu.be/abc').status).toBe('ok');
+	});
+
+	it('trims the address before applying it', () => {
+		expect(checkUrlInsert('image', '  https://example.com/a.png  ')).toEqual({
+			status: 'ok',
+			url: 'https://example.com/a.png'
+		});
+	});
+
+	it('rejects a protocol the kind cannot render', () => {
+		// A javascript: URL must never reach setLink or setImage.
+		expect(checkUrlInsert('link', 'javascript:alert(1)').status).toBe('invalid');
+		expect(checkUrlInsert('image', 'mailto:a@b.com').status).toBe('invalid');
+		// data: renders an image but is not a page or a video.
+		expect(checkUrlInsert('youtube', 'data:text/html,hi').status).toBe('invalid');
+		expect(checkUrlInsert('link', 'example.com').status).toBe('invalid');
+	});
+
+	it('reads an empty box as removing the link, and as nothing to insert otherwise', () => {
+		expect(checkUrlInsert('link', '   ')).toEqual({ status: 'clear' });
+		expect(checkUrlInsert('image', '')).toEqual({ status: 'invalid', message: 'Enter a URL.' });
+		expect(checkUrlInsert('youtube', '')).toMatchObject({ status: 'invalid' });
 	});
 });

@@ -46,6 +46,21 @@ The two side panels are opened by **one control each, at opposite edges of the n
 
 There are **two bubble menus**, each a `BubbleMenu` instance with its own extension name and plugin key (`tableBubbleMenu` is `BubbleMenu.extend({ name })`, since duplicate extension names are rejected). Their `shouldShow` rules partition the cases rather than overlapping: the format menu keeps Tiptap's default rule (focused, editable, a selection that is not an empty text block) **minus cell selections** (via `isCellSelection`, not a range count), and the table menu shows for a plain cursor or a cell selection inside a table — a cursor is enough because the row/column tools act on the cell it sits in. Table tools deliberately do not live in the toolbar: as a conditional toolbar group they shifted every button to their right the moment the cursor entered a cell.
 
+## Dialogs and toasts
+
+The app asks and reports through its own UI: there is **no `window.alert`, `confirm`, or `prompt` left**. The split is by who is waiting.
+
+- **A dialog** when the app needs an answer before it can go on, or when the message is attached to something the user has to fix: `PromptDialog` (a value), `ConfirmDialog` (a decision).
+- **A toast** when something happened that the user did not ask about at that moment and cannot correct in place — a failed save, a database that another tab is holding open. Top right, from `svelte-sonner` (see [architecture.md](architecture.md#ui-components)).
+
+The rule that matters: **a validation error is never a toast.** The native prompt closed on submit, so the alert that followed had nothing left to correct and the typed value was gone. `PromptDialog`'s `submit` returns the message to show and the dialog stays open on the text, which is the whole reason it exists.
+
+`URL_INSERTS`/`checkUrlInsert`/`applyUrlInsert` (`editor/editor.ts`) drive the link, image, and YouTube prompts. The protocol allowlist is per kind and lives on the spec (a `javascript:` URL must never reach `setLink`, and `data:` renders an image but is not a page or a video); the link dialog opens on `currentLinkUrl`, so editing a link is not retyping it; and submitting an empty box is a real action for links only — it removes the link, which is why `checkUrlInsert` answers `clear` there and `invalid` for the other two. The download dialog reuses the same component with `suggestedDownloadName` and `normalizeDownloadName`.
+
+`askConfirm` returns a promise so a call site still reads like the `window.confirm` it replaced. Two things keep it honest: **dismissing counts as "no"** (`ConfirmDialog`'s `onOpenChange` answers on Escape and on the overlay, not just the Cancel button), and a second question **answers the first one "no" before replacing it** — otherwise its caller would await a dialog that is no longer on screen. Both dialogs' open state is the request object itself, so there is no open flag that can disagree with the content, and both join `handleSidebarKeydown`'s Escape guard so closing one does not also close the document list underneath it.
+
+One case needs more than a toast call: **a message about a page that is about to be replaced**. A failed share ends in `location.replace`, which takes any toast with it, so `stashStartupNotice`/`takeStartupNotice` hand the message through `sessionStorage` and the next mount shows it. Session-scoped and cleared on read, so it appears exactly once and cannot greet the user tomorrow. The old `alert('Disconnecting...')` was deleted rather than converted: it only ever mattered because it blocked, and the reload is the feedback.
+
 ## Tables
 
 Tables are Tiptap's `Table`/`TableRow`/`TableHeader`/`TableCell` (resizable columns), registered in `getExtensions()` so both normal and sharing mode get them. `insertTable` in `editor/editor.ts` owns the default shape (`DEFAULT_TABLE_SIZE`, 3×3 with a header row), and the row/column/header/merge tools live in the **table bubble menu**, not the toolbar (see [Toolbar and bubble menus](#toolbar-and-bubble-menus)).
