@@ -66,6 +66,60 @@ export function buildShareUrl(origin: string, pathname: string, metadata: ShareM
 	return url.toString();
 }
 
+/**
+ * Reconnection is the provider's job, not ours. It backs off and keeps trying
+ * for as long as the tab is open (`maxAttempts: 0`): a session that dropped is
+ * one whose content lives in this page, so giving up on it costs the user work.
+ * The delay is capped so a long outage does not turn into a long wait after the
+ * relay comes back.
+ */
+export const SHARE_SOCKET_OPTIONS = {
+	maxAttempts: 0,
+	initialDelay: 0,
+	delay: 1000,
+	factor: 1.6,
+	maxDelay: 10000,
+	jitter: true
+};
+
+/**
+ * How long the *first* connection may take before the address is judged wrong.
+ * Only the first: once a session has connected, a drop is treated as an outage
+ * to wait out, never as a reason to leave.
+ */
+export const SHARE_CONNECT_TIMEOUT_MS = 8000;
+
+export type ShareStatus = 'connecting' | 'connected' | 'reconnecting';
+
+export const SHARE_STATUS_LABELS: Record<ShareStatus, string> = {
+	connecting: 'Connecting…',
+	connected: 'Connected',
+	reconnecting: 'Reconnecting…'
+};
+
+/**
+ * `hasConnected` is the whole distinction: an unreachable address and a dropped
+ * session look identical to the socket, but one means "this link is probably
+ * wrong" and the other means "your work is here, hold on".
+ */
+export function nextShareStatus(connected: boolean, hasConnected: boolean): ShareStatus {
+	if (connected) {
+		return 'connected';
+	}
+
+	return hasConnected ? 'reconnecting' : 'connecting';
+}
+
+/**
+ * Title for a local copy taken out of a shared session. Shared documents have no
+ * local row, so a copy is the only way work in one survives the relay.
+ */
+export function sharedCopyTitle(workspace: string): string {
+	const name = workspace.trim();
+
+	return name ? `${name} (shared copy)` : 'Untitled (shared copy)';
+}
+
 function isSameShare(left: ShareMetadata, right: ShareMetadata) {
 	return left.endpoint === right.endpoint && left.workspace === right.workspace;
 }
@@ -389,7 +443,6 @@ export function endSharing(provider: HocuspocusProvider | undefined) {
 	if (provider) {
 		// The old `alert('Disconnecting...')` only mattered because it blocked: the
 		// reload below is the feedback, and a toast would be gone before it is read.
-		localStorage.removeItem('connected');
 		location.replace(`${location.origin}${location.pathname}`);
 	}
 }

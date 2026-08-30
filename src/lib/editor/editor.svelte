@@ -17,6 +17,7 @@
 		Braces,
 		Code,
 		FileUp,
+		Copy,
 		FoldHorizontal,
 		FoldVertical,
 		Heading1,
@@ -70,6 +71,12 @@
 		readSharedMetadata,
 		readSidebarOpen,
 		removeSharedDocumentHistory,
+		SHARE_CONNECT_TIMEOUT_MS,
+		SHARE_SOCKET_OPTIONS,
+		SHARE_STATUS_LABELS,
+		type ShareStatus,
+		sharedCopyTitle,
+		nextShareStatus,
 		stashStartupNotice,
 		startSharing,
 		suggestedDownloadName,
@@ -160,6 +167,15 @@
 	let _endpoint = '';
 	let _workspace = '';
 	let isSharingMode = false;
+	let shareStatus: ShareStatus = 'connecting';
+	/**
+	 * Once true it stays true for the session: it is what separates an address
+	 * that never answered from a session whose content is in this page.
+	 */
+	let shareHasConnected = false;
+	/** The standing "connection lost" toast, so a flapping link cannot stack them. */
+	let reconnectToastId: string | number | undefined;
+	let shareConnectTimer: number | undefined;
 	let saveTimer: ReturnType<typeof setTimeout> | undefined;
 	let saveQueue: Promise<void> = Promise.resolve();
 	/** A title edit is waiting on the shared save timer. */
@@ -690,6 +706,66 @@
 	function settleConfirm(confirmed: boolean) {
 		confirmRequest?.resolve(confirmed);
 		confirmRequest = null;
+	}
+
+	/**
+	 * The socket's view of the world, turned into the app's. Nothing here
+	 * navigates: a session that has connected once holds content that exists
+	 * nowhere else, so a drop is an outage to sit out, not a reason to replace the
+	 * page. The old code reloaded on every close and gave up after one retry,
+	 * which threw away unsynced edits with no warning.
+	 */
+	function applyShareStatus(connected: boolean) {
+		if (connected) {
+			shareHasConnected = true;
+			window.clearTimeout(shareConnectTimer);
+			shareConnectTimer = undefined;
+		}
+
+		shareStatus = nextShareStatus(connected, shareHasConnected);
+		title = connected ? formatPageTitle(_workspace) : 'LightNote';
+
+		if (shareStatus === 'reconnecting' && reconnectToastId === undefined) {
+			// It stays until the link is back: the status line at the top of the
+			// document is out of sight for anyone editing further down.
+			reconnectToastId = toast.warning('Connection lost. Reconnecting…', {
+				duration: Number.POSITIVE_INFINITY,
+				action: { label: 'Save a copy', onClick: () => void saveSharedCopy() }
+			});
+
+			return;
+		}
+
+		if (connected && reconnectToastId !== undefined) {
+			toast.dismiss(reconnectToastId);
+			reconnectToastId = undefined;
+			toast.success('Reconnected.');
+		}
+	}
+
+	/**
+	 * Takes the shared document into this browser as a normal note. A shared
+	 * session writes nothing locally, so without this the only copy of the work is
+	 * on the relay — and the moment worth having it is exactly the moment the
+	 * relay stopped answering.
+	 */
+	async function saveSharedCopy() {
+		if (!editor) {
+			return;
+		}
+
+		try {
+			await createDocument({
+				title: sharedCopyTitle(_workspace),
+				content: editor.getJSON(),
+				contentFormat: 'tiptap-json'
+			});
+
+			toast.success('Saved a copy to this browser.');
+		} catch (error) {
+			toast.error(describeError(error, 'Failed to save a copy'));
+			console.error(error);
+		}
 	}
 
 	/**
@@ -1973,6 +2049,15 @@
 						onClick: () => (shareDialogOpen = true)
 					}),
 					toolbarItem({
+						key: 'save-shared-copy',
+						label: 'Save a copy',
+						icon: Copy,
+						onClick: () => void saveSharedCopy(),
+						// Disabled rather than hidden, like Stop sharing above it: a
+						// normal document is already saved, so there is nothing to copy.
+						disabled: !sharing
+					}),
+					toolbarItem({
 						key: 'stop-share',
 						label: 'Stop sharing',
 						icon: ScreenShareOff,
@@ -2067,38 +2152,30 @@
 
 					const websocketProvider = new HocuspocusProviderWebsocket({
 						url: endpoint,
-						maxAttempts: 1
+						...SHARE_SOCKET_OPTIONS
 					});
-					const reconnectKey = `reconnect:${endpoint}:${workspace}`;
+
+					// Only ever fires when nothing has connected yet: an address that
+					// never answers is a wrong link, and leaving costs nothing because
+					// there is no content to lose. A drop after that is handled by
+					// `applyShareStatus`, which never navigates.
+					shareConnectTimer = window.setTimeout(() => {
+						stashStartupNotice(sessionStorage, `Could not connect to ${endpoint}/${workspace}`);
+						location.replace(`${location.origin}${location.pathname}`);
+					}, SHARE_CONNECT_TIMEOUT_MS);
 
 					provider = new HocuspocusProvider({
 						websocketProvider,
 						name: workspace,
-						onConnect() {
-							sessionStorage.removeItem(reconnectKey);
-							localStorage.setItem('connected', JSON.stringify({ endpoint, workspace }));
-							title = formatPageTitle(workspace);
-						},
-						onClose() {
-							title = 'LightNote';
-							if (!sessionStorage.getItem(reconnectKey) && localStorage.getItem('connected')) {
-								sessionStorage.setItem(reconnectKey, 'true');
-								location.replace(
-									buildShareUrl(location.origin, location.pathname, { endpoint, workspace })
-								);
-								return;
-							}
-
-							localStorage.removeItem('connected');
-							sessionStorage.removeItem(reconnectKey);
-							// Handed to the page this one is about to be replaced by; a toast
-							// shown here would be gone before it could be read.
-							stashStartupNotice(sessionStorage, `Failed to connect to ${endpoint}/${workspace}`);
-							location.replace(`${location.origin}${location.pathname}`);
+						onStatus({ status }) {
+							applyShareStatus(status === 'connected');
 						},
 						connect: false
 					});
-					await provider.connect();
+					// Deliberately not awaited: the Y.Doc exists now and fills in when the
+					// first sync lands, so the editor can be built and shown immediately
+					// instead of holding a blank page for the length of the handshake.
+					provider.connect().catch((error: unknown) => console.error(error));
 
 					localStorage.setItem('shared', JSON.stringify({ endpoint, workspace }));
 					sharedDocuments = upsertSharedDocumentHistory({ endpoint, workspace });
@@ -2214,6 +2291,9 @@
 			}
 			titleObserver?.disconnect();
 			dockQuery.removeEventListener('change', onDockChange);
+			// Or a share that never connected would navigate a page that has already
+			// moved on to something else.
+			window.clearTimeout(shareConnectTimer);
 			editor?.destroy();
 			(provider as (HocuspocusProvider & { destroy?: () => void }) | undefined)?.destroy?.();
 		};
@@ -2554,6 +2634,19 @@
 			<!-- A shared session is named by its workspace, and there is no local
 			     document row to rename. -->
 			<h1 class="break-words text-3xl font-bold md:text-4xl">{effectiveDocumentTitle}</h1>
+			<!-- The page title used to be the only sign of the connection, which is
+			     invisible while you are looking at the document. -->
+			<p class="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+				<span
+					class="h-2 w-2 shrink-0 rounded-full {shareStatus === 'connected'
+						? 'bg-primary'
+						: shareStatus === 'reconnecting'
+							? 'bg-destructive'
+							: 'bg-muted-foreground'}"
+					aria-hidden="true"
+				></span>
+				{SHARE_STATUS_LABELS[shareStatus]}
+			</p>
 		{:else}
 			<textarea
 				bind:this={documentTitleField}
@@ -2584,14 +2677,18 @@
 	<Dialog.Content class="sm:max-w-[425px]">
 		<Dialog.Header>
 			<Dialog.Title>Share</Dialog.Title>
-			<Dialog.Description>Please input relay server endpoint and workspace name</Dialog.Description>
+			<Dialog.Description>
+				Connect to a relay you run. Anyone with the endpoint and workspace name can read and edit
+				the document — the workspace name is the only thing protecting it. Over HTTPS the endpoint
+				must be <code>wss://</code>; a plain <code>ws://</code> address is blocked by the browser.
+			</Dialog.Description>
 		</Dialog.Header>
 		<div class="grid gap-4 py-4">
 			<div class="grid grid-cols-4 items-center gap-4">
 				<Label for="endpoint" class="text-left">Endpoint</Label>
 				<Input
 					id="endpoint"
-					placeholder="ws://localhost:1234"
+					placeholder="wss://relay.example.com"
 					class="col-span-3"
 					bind:value={_endpoint}
 					on:keydown={(e) => {

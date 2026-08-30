@@ -10,6 +10,8 @@ import { CellSelection } from '@tiptap/pm/tables';
 import {
 	buildShareUrl,
 	checkUrlInsert,
+	nextShareStatus,
+	sharedCopyTitle,
 	createExportHtml,
 	extractEditorContent,
 	formatPageTitle,
@@ -303,5 +305,30 @@ describe('checkUrlInsert', () => {
 		expect(checkUrlInsert('link', '   ')).toEqual({ status: 'clear' });
 		expect(checkUrlInsert('image', '')).toEqual({ status: 'invalid', message: 'Enter a URL.' });
 		expect(checkUrlInsert('youtube', '')).toMatchObject({ status: 'invalid' });
+	});
+});
+
+describe('share connection status', () => {
+	it('tells an address that never answered from a session that dropped', () => {
+		// Identical to the socket, opposite in consequence: one is a wrong link,
+		// the other holds content that exists nowhere else.
+		expect(nextShareStatus(false, false)).toBe('connecting');
+		expect(nextShareStatus(false, true)).toBe('reconnecting');
+	});
+
+	it('reports a live socket as connected either way', () => {
+		expect(nextShareStatus(true, false)).toBe('connected');
+		expect(nextShareStatus(true, true)).toBe('connected');
+	});
+});
+
+describe('sharedCopyTitle', () => {
+	it('names the copy after the workspace', () => {
+		expect(sharedCopyTitle('team-notes')).toBe('team-notes (shared copy)');
+		expect(sharedCopyTitle('  spaced  ')).toBe('spaced (shared copy)');
+	});
+
+	it('still names a copy taken from a blank workspace', () => {
+		expect(sharedCopyTitle('   ')).toBe('Untitled (shared copy)');
 	});
 });
