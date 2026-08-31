@@ -1,4 +1,3 @@
-import { defaultContent } from '$lib/editor/constants';
 import type { JSONContent } from '@tiptap/core';
 
 export const CURRENT_DOCUMENT_ID_KEY = 'currentDocumentId';
@@ -276,7 +275,7 @@ export function normalizeDocument(document: LegacyLightNoteDocument): LightNoteD
 	return {
 		id: document.id,
 		title: normalizeTitle(document.title),
-		content: document.content ?? document.html ?? defaultContent,
+		content: document.content ?? document.html ?? '',
 		contentFormat: document.contentFormat ?? 'html',
 		createdAt: document.createdAt,
 		updatedAt: document.updatedAt,
@@ -361,7 +360,11 @@ export async function createDocument(input: CreateDocumentInput = {}, factory?: 
 	const document: LightNoteDocument = {
 		id: createDocumentId(),
 		title: normalizeTitle(input.title),
-		content: input.content ?? defaultContent,
+		// A document with nothing in it, the same as the one the New button makes.
+		// This used to seed a guide describing the app; the README carries that now,
+		// and a first-run document that has to be emptied before it can be used is
+		// worse than a blank page.
+		content: input.content ?? '',
 		contentFormat: input.contentFormat ?? 'html',
 		createdAt: now,
 		updatedAt: now,

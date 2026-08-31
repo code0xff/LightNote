@@ -737,11 +737,9 @@
 	async function createNewDocument() {
 		try {
 			await flushCurrentDocument();
-			const document = await createDocument({
-				title: 'Untitled',
-				content: { type: 'doc', content: [{ type: 'paragraph' }] },
-				contentFormat: 'tiptap-json'
-			});
+			// No arguments: an untitled, empty document is what `createDocument`
+			// already makes, and spelling it out here let the two drift.
+			const document = await createDocument();
 
 			await refreshDocuments();
 			setActiveDocument(document);
@@ -1031,11 +1029,7 @@
 
 			let remainingDocuments = await listDocuments();
 			if (remainingDocuments.length === 0) {
-				const document = await createDocument({
-					title: 'Untitled',
-					content: { type: 'doc', content: [{ type: 'paragraph' }] },
-					contentFormat: 'tiptap-json'
-				});
+				const document = await createDocument();
 				remainingDocuments = [document];
 			}
 

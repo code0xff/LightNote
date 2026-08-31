@@ -140,6 +140,12 @@ describe('document store helpers', () => {
 		expect(getStoredCurrentDocumentId(storage)).toBe('doc-1');
 	});
 
+	it('leaves a record with no content at all empty', () => {
+		expect(
+			normalizeDocument({ id: 'doc-1', title: 'Empty', createdAt: 1, updatedAt: 2 }).content
+		).toBe('');
+	});
+
 	it('normalizes legacy html documents to content documents', () => {
 		expect(
 			normalizeDocument({
@@ -248,6 +254,9 @@ describe('document store CRUD (IndexedDB)', () => {
 
 		expect(created).toMatchObject({
 			title: 'Untitled',
+			// Empty, not a guide: a first-run document that has to be cleared before
+			// it can be written in is worse than a blank page.
+			content: '',
 			contentFormat: 'html',
 			createdAt: 100,
 			updatedAt: 100
