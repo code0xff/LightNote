@@ -20,6 +20,7 @@
 		Copy,
 		FoldHorizontal,
 		FoldVertical,
+		GripVertical,
 		Heading1,
 		Heading2,
 		Heading3,
@@ -103,6 +104,7 @@
 		updateDocument,
 		type LightNoteDocument
 	} from '$lib/documents/store';
+	import { edgeScrollStep, hasDragStarted } from './dragging';
 	import { getExtensions } from './extensions';
 	import { documentColumnClass } from './constants';
 	import {
@@ -530,43 +532,91 @@
 	/**
 	 * The list is reordered live as the pointer moves, so the cards show the
 	 * result instead of an insertion marker predicting it. Nothing is written
-	 * until the drop, and this holds the order to put back if the drag is
-	 * cancelled — `dragend` fires for both outcomes, and only a drop clears it.
+	 * until the pointer is released, and this holds the order to put back if the
+	 * drag is cancelled instead.
 	 */
 	let documentsBeforeDrag: LightNoteDocument[] | null = null;
 	let draggingDocumentId: string | null = null;
+	/** The scroll container, so a drag at its edge can scroll it. */
+	let documentListElement: HTMLElement | undefined;
+	/** Set on press, promoted to `draggingDocumentId` once the pointer travels. */
+	let dragCandidateId: string | null = null;
+	let dragPointerId: number | null = null;
+	let dragOrigin: { x: number; y: number } | null = null;
+	let dragPoint = { x: 0, y: 0 };
+	let edgeScrollFrame: number | undefined;
+	/**
+	 * A drag ends in a click on whatever the pointer was captured by. Without
+	 * this, letting go of a card would also open the document it was dropped on.
+	 */
+	let dragSuppressesClick = false;
 
-	function startDocumentDrag(event: DragEvent, id: string) {
-		documentsBeforeDrag = documents;
-		draggingDocumentId = id;
+	/**
+	 * Touch drags start on the grip only: a finger dragging a card is the same
+	 * gesture as scrolling the list, and the list has to keep scrolling. A mouse
+	 * has no such conflict, so it can take hold of the whole card.
+	 */
+	function pressDocument(event: PointerEvent, id: string, fromGrip: boolean) {
+		const mouse = event.pointerType === 'mouse';
 
-		// Firefox starts no drag at all without payload on the transfer.
-		event.dataTransfer?.setData('text/plain', id);
+		dragSuppressesClick = false;
 
-		if (event.dataTransfer) {
-			event.dataTransfer.effectAllowed = 'move';
-		}
-	}
-
-	function dragDocumentOver(index: number) {
-		if (!draggingDocumentId) {
+		if ((mouse && event.button !== 0) || (!fromGrip && !mouse)) {
 			return;
 		}
 
-		documents = moveDocumentTo(documents, draggingDocumentId, index);
-	}
-
-	function dropDocument() {
-		if (!draggingDocumentId) {
+		// The title field owns its own pointer while it is open.
+		if (editingTitleDocumentId === id) {
 			return;
 		}
 
-		// Clearing this first is what tells `endDocumentDrag` the move was
-		// committed rather than abandoned.
-		documentsBeforeDrag = null;
-		draggingDocumentId = null;
+		dragCandidateId = id;
+		dragPointerId = event.pointerId;
+		dragOrigin = { x: event.clientX, y: event.clientY };
+		dragPoint = { x: event.clientX, y: event.clientY };
+	}
 
-		void persistDocumentOrder();
+	/**
+	 * Tracked on `window` rather than on the card, and without `setPointerCapture`.
+	 * Reordering moves the dragged card in the DOM, which loses a capture held by
+	 * that card — the first version did exactly that, and the drop it never saw
+	 * left the new order on screen but unsaved.
+	 */
+	function dragDocument(event: PointerEvent) {
+		if (dragPointerId !== event.pointerId) {
+			return;
+		}
+
+		dragPoint = { x: event.clientX, y: event.clientY };
+
+		if (!draggingDocumentId) {
+			if (!dragCandidateId || !dragOrigin || !hasDragStarted(dragOrigin, dragPoint)) {
+				return;
+			}
+
+			draggingDocumentId = dragCandidateId;
+			documentsBeforeDrag = documents;
+			startEdgeScroll();
+		}
+
+		// A captured touch would otherwise still scroll the panel behind the list.
+		event.preventDefault();
+		reorderToPointer();
+	}
+
+	function releaseDocument(event: PointerEvent) {
+		if (dragPointerId !== event.pointerId) {
+			return;
+		}
+
+		if (draggingDocumentId) {
+			// Clearing this first is what tells a cancel from a completed move.
+			documentsBeforeDrag = null;
+			dragSuppressesClick = true;
+			void persistDocumentOrder();
+		}
+
+		endDocumentDrag();
 	}
 
 	function endDocumentDrag() {
@@ -576,14 +626,87 @@
 		}
 
 		draggingDocumentId = null;
+		dragCandidateId = null;
+		dragPointerId = null;
+		dragOrigin = null;
+		stopEdgeScroll();
+	}
+
+	/** Moves the dragged card to whichever card the pointer is over. */
+	function reorderToPointer() {
+		if (!draggingDocumentId) {
+			return;
+		}
+
+		const target = window.document
+			.elementFromPoint(dragPoint.x, dragPoint.y)
+			?.closest('[data-document-index]');
+
+		if (!target) {
+			return;
+		}
+
+		documents = moveDocumentTo(
+			documents,
+			draggingDocumentId,
+			Number(target.getAttribute('data-document-index'))
+		);
 	}
 
 	/**
-	 * Alt+Arrow moves the focused card, because a drag is unreachable from the
-	 * keyboard and from touch, where the browser owns the gesture.
+	 * A dragging finger cannot also scroll, so the list scrolls itself while the
+	 * pointer rests near an edge. On a frame loop rather than on pointer moves: a
+	 * finger held still at the edge sends no events and would sit there forever.
+	 */
+	function startEdgeScroll() {
+		const step = () => {
+			if (!draggingDocumentId || !documentListElement) {
+				edgeScrollFrame = undefined;
+				return;
+			}
+
+			const bounds = documentListElement.getBoundingClientRect();
+			const delta = edgeScrollStep(dragPoint.y, bounds.top, bounds.bottom);
+
+			if (delta !== 0) {
+				documentListElement.scrollTop += delta;
+				reorderToPointer();
+			}
+
+			edgeScrollFrame = requestAnimationFrame(step);
+		};
+
+		edgeScrollFrame = requestAnimationFrame(step);
+	}
+
+	function stopEdgeScroll() {
+		if (edgeScrollFrame !== undefined) {
+			cancelAnimationFrame(edgeScrollFrame);
+			edgeScrollFrame = undefined;
+		}
+	}
+
+	/**
+	 * Whether the click that just arrived is the tail of a drag. Every button on a
+	 * card asks: letting go of a card would otherwise open the document it landed
+	 * on, or worse, press the delete button it landed on.
+	 */
+	function consumeDragClick() {
+		if (!dragSuppressesClick) {
+			return false;
+		}
+
+		dragSuppressesClick = false;
+
+		return true;
+	}
+
+	/**
+	 * Arrow keys on the grip, which is a reorder control and nothing else. The
+	 * drag itself is unreachable from the keyboard.
 	 */
 	function moveDocumentByKey(event: KeyboardEvent, id: string, index: number) {
-		if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) {
+		if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
 			return;
 		}
 
@@ -2380,6 +2503,7 @@
 			// Or a share that never connected would navigate a page that has already
 			// moved on to something else.
 			window.clearTimeout(shareConnectTimer);
+			stopEdgeScroll();
 			editor?.destroy();
 			(provider as (HocuspocusProvider & { destroy?: () => void }) | undefined)?.destroy?.();
 		};
@@ -2390,7 +2514,12 @@
 	<title>{title}</title>
 </svelte:head>
 
-<svelte:window on:keydown={handleSidebarKeydown} />
+<svelte:window
+	on:keydown={handleSidebarKeydown}
+	on:pointermove={dragDocument}
+	on:pointerup={releaseDocument}
+	on:pointercancel={endDocumentDrag}
+/>
 
 {#if editor}
 	<div>
@@ -2529,14 +2658,10 @@
 				<PanelLeftClose class="h-4 w-4" />
 			</Button>
 		</div>
-		<!-- The drop is taken here rather than on a card, so releasing in the gap
-		     between two cards, or in the empty space below them, still commits the
-		     order the drag has already arranged. -->
 		<div
+			bind:this={documentListElement}
 			role="list"
 			class="flex flex-1 flex-col items-stretch gap-2 overflow-y-auto p-3"
-			on:dragover|preventDefault
-			on:drop|preventDefault={dropDocument}
 		>
 			{#if isSharingMode}
 				{#each sharedDocuments as document (`${document.endpoint}:${document.workspace}`)}
@@ -2575,20 +2700,28 @@
 				{/each}
 			{:else}
 				{#each documents as document, index (document.id)}
-					<!-- `draggable` is dropped while this card's title is being edited:
-					     a draggable ancestor stops text selection inside the field. -->
 					<div
 						role="listitem"
-						draggable={editingTitleDocumentId !== document.id}
-						on:dragstart={(event) => startDocumentDrag(event, document.id)}
-						on:dragover={() => dragDocumentOver(index)}
-						on:dragend={endDocumentDrag}
-						class="group grid min-h-16 w-full min-w-0 cursor-grab grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {document.id ===
+						data-document-index={index}
+						on:pointerdown={(event) => pressDocument(event, document.id, false)}
+						class="group grid min-h-16 w-full min-w-0 select-none grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {document.id ===
 						currentDocument?.id
 							? 'border-primary bg-secondary'
 							: 'border-transparent hover:border-border hover:bg-secondary'}"
 						class:opacity-50={draggingDocumentId === document.id}
 					>
+						<!-- Touch drags start here and nowhere else, so a finger on the card
+						     still scrolls the list. `touch-none` is what lets the drag win
+						     over the scroll once it does start. -->
+						<button
+							type="button"
+							aria-label={`Reorder ${document.title || 'Untitled'}`}
+							class="mt-0.5 inline-flex h-7 w-4 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+							on:pointerdown={(event) => pressDocument(event, document.id, true)}
+							on:keydown={(event) => moveDocumentByKey(event, document.id, index)}
+						>
+							<GripVertical class="h-4 w-4" />
+						</button>
 						{#if document.id === currentDocument?.id && editingTitleDocumentId === document.id}
 							<div class="min-w-0">
 								<textarea
@@ -2612,8 +2745,13 @@
 							<button
 								type="button"
 								class="min-w-0 text-left"
-								on:click={() => startTitleEditing(document)}
-								on:keydown={(event) => moveDocumentByKey(event, document.id, index)}
+								on:click={() => {
+									if (consumeDragClick()) {
+										return;
+									}
+
+									startTitleEditing(document);
+								}}
 							>
 								<span class="flex min-h-7 items-start gap-1">
 									<span class="min-w-0 break-words py-0.5 font-medium"
@@ -2630,10 +2768,13 @@
 								type="button"
 								class="min-w-0 text-left"
 								on:click={() => {
+									if (consumeDragClick()) {
+										return;
+									}
+
 									void switchDocument(document.id);
 									dismissOverlaidSidebar();
 								}}
-								on:keydown={(event) => moveDocumentByKey(event, document.id, index)}
 							>
 								<span class="block min-h-5 break-words font-medium"
 									>{document.title || 'Untitled'}</span
@@ -2647,7 +2788,13 @@
 							type="button"
 							aria-label={`Delete ${document.title || 'Untitled'}`}
 							class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100"
-							on:click={() => deleteDocumentById(document)}
+							on:click={() => {
+								if (consumeDragClick()) {
+									return;
+								}
+
+								void deleteDocumentById(document);
+							}}
 						>
 							<Trash2 class="h-4 w-4" />
 						</button>
