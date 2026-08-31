@@ -4,6 +4,10 @@ LightNote has been developed utilizing [SvelteKit](https://kit.svelte.dev), [Tip
 
 Documents are stored locally in **IndexedDB**. LightNote keeps multiple documents on the device, restores the last opened document, and automatically saves edits. You can export the active document as an HTML file, and imported HTML files are added as new documents.
 
+The document list slides in from the left, and its cards can be dragged into whatever order you want — by the grip on a touch screen, or anywhere on the card with a mouse.
+
+LightNote can also write with you. Open the AI panel from the toolbar, paste your own OpenAI API key, and it will rewrite a selection, continue where you stopped, or take an instruction and edit the document itself. The key is stored only in this browser and is sent directly to OpenAI; there is no server of ours in between.
+
 If you want more features, please visit the Tiptap documentation and extend the functionality through extensions.
 
 ---
@@ -39,7 +43,7 @@ LightNote supports collaboration features. LightNote utilizes Tiptap's Collabora
 
     npx @hocuspocus/cli@v2.15.2 --port 1234 --sqlite
 
-If it is not possible to provide the hosting endpoint over HTTPS, you can use the [ngrok](https://ngrok.com) proxy to expose it via HTTPS. After signing up for ngrok and obtaining the token, use the command below to expose the previously launched server over HTTPS.
+LightNote is served over HTTPS, and a page on HTTPS can only open a `wss://` WebSocket — a plain `ws://` address is blocked by the browser. Unless your relay already speaks HTTPS, put the [ngrok](https://ngrok.com) proxy in front of it. After signing up for ngrok and obtaining the token, use the command below to expose the previously launched server over HTTPS.
 
     ngrok http http://localhost:1234
 
@@ -47,7 +51,9 @@ Finally, connect to the relay server using the ngrok proxy address and workspace
 
 [https://code0xff.github.io/LightNote?endpoint={proxy_url}&workspace={workspace}](https://code0xff.github.io/LightNote?endpoint={proxy_url}&workspace={workspace})
 
-Now, collaboration mode is active!
+Now, collaboration mode is active! Anyone with the endpoint and the workspace name can read and edit the document — the workspace name is the only thing protecting it.
+
+A shared document lives on the relay and in the open page, and is not saved to this browser. If the connection drops, LightNote keeps reconnecting and says so rather than dumping you out of the session; **Save a copy** in the toolbar menu takes what is on screen into a normal local document.
 
 ---
 

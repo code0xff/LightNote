@@ -2403,7 +2403,6 @@
 					);
 					console.error(error);
 
-					localStorage.removeItem('connected');
 					location.replace(`${location.origin}${location.pathname}`);
 					return;
 				}
