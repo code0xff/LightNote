@@ -1,4 +1,4 @@
-import{F as $,G as S,H as k}from"./dialog-ui.CUr7K6UJ.js";let M,I;function j(n){if(typeof document>"u")return;clearTimeout(M),clearTimeout(I);const o=document.createElement("style"),u=document.createTextNode(`* {
+import{F as $,G as S,H as k}from"./dialog-ui.Dp6vOdGg.js";let M,I;function j(n){if(typeof document>"u")return;clearTimeout(M),clearTimeout(I);const o=document.createElement("style"),u=document.createTextNode(`* {
      -webkit-transition: none !important;
      -moz-transition: none !important;
      -o-transition: none !important;
