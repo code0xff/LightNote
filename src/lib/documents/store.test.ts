@@ -13,7 +13,9 @@ import {
 	getStoredCurrentDocumentId,
 	listDocuments,
 	migrateLegacyAutoSave,
+	moveDocumentTo,
 	normalizeDocument,
+	reorderDocuments,
 	sortDocuments,
 	setStoredCurrentDocumentId,
 	updateDocument,
@@ -154,33 +156,89 @@ describe('document store helpers', () => {
 			contentFormat: 'html',
 			createdAt: 1,
 			updatedAt: 2,
+			// Seeded from `createdAt`, so a record written before manual ordering
+			// existed keeps exactly the place it already had.
+			order: 1,
 			sourceFileName: undefined
 		});
+	});
+
+	it('keeps a stored order over the seeded one', () => {
+		expect(
+			normalizeDocument({
+				id: 'doc-1',
+				title: 'Moved',
+				html: '<p>Saved</p>',
+				createdAt: 1,
+				updatedAt: 2,
+				order: 4
+			}).order
+		).toBe(4);
 	});
 
 	it('keeps document list order stable by creation time', () => {
 		expect(
 			sortDocuments([
-				{
-					id: 'newer',
-					title: 'Newer',
-					content: '<p>Newer</p>',
-					contentFormat: 'html',
-					createdAt: 2,
-					updatedAt: 3
-				},
-				{
-					id: 'older',
-					title: 'Older',
-					content: '<p>Older</p>',
-					contentFormat: 'html',
-					createdAt: 1,
-					updatedAt: 10
-				}
+				legacyDocument({ id: 'newer', createdAt: 2, updatedAt: 3, order: 2 }),
+				legacyDocument({ id: 'older', createdAt: 1, updatedAt: 10, order: 1 })
 			]).map((document) => document.id)
 		).toEqual(['older', 'newer']);
 	});
+
+	it('sorts by the manual order, not by creation time', () => {
+		expect(
+			sortDocuments([
+				legacyDocument({ id: 'first-made', createdAt: 1, order: 2 }),
+				legacyDocument({ id: 'moved-up', createdAt: 9, order: 1 })
+			]).map((document) => document.id)
+		).toEqual(['moved-up', 'first-made']);
+	});
+
+	it('breaks an order tie by creation time', () => {
+		// Two documents can only share an order value if both were seeded from the
+		// same creation time, but the sort must still be deterministic.
+		expect(
+			sortDocuments([
+				legacyDocument({ id: 'b', createdAt: 5, order: 1 }),
+				legacyDocument({ id: 'a', createdAt: 2, order: 1 })
+			]).map((document) => document.id)
+		).toEqual(['a', 'b']);
+	});
 });
+
+describe('moveDocumentTo', () => {
+	const list = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+
+	it('moves a document down and up', () => {
+		expect(moveDocumentTo(list, 'a', 2).map((item) => item.id)).toEqual(['b', 'c', 'a']);
+		expect(moveDocumentTo(list, 'c', 0).map((item) => item.id)).toEqual(['c', 'a', 'b']);
+	});
+
+	it('clamps a target past either end', () => {
+		expect(moveDocumentTo(list, 'a', 99).map((item) => item.id)).toEqual(['b', 'c', 'a']);
+		expect(moveDocumentTo(list, 'c', -5).map((item) => item.id)).toEqual(['c', 'a', 'b']);
+	});
+
+	it('returns the same array when nothing moves, so the caller can skip the write', () => {
+		expect(moveDocumentTo(list, 'b', 1)).toBe(list);
+		expect(moveDocumentTo(list, 'missing', 0)).toBe(list);
+	});
+});
+
+/** A stored record as it comes off IndexedDB, before `normalizeDocument`. */
+function legacyDocument(overrides: {
+	id: string;
+	createdAt: number;
+	updatedAt?: number;
+	order?: number;
+}) {
+	return normalizeDocument({
+		title: 'Doc',
+		html: '<p>Doc</p>',
+		updatedAt: overrides.updatedAt ?? overrides.createdAt,
+		...overrides
+	});
+}
 
 describe('document store CRUD (IndexedDB)', () => {
 	it('creates a document with defaults and reads it back', async () => {
@@ -321,5 +379,34 @@ describe('ensureInitialDocument and legacy migration', () => {
 		const storage = memoryStorage({ [LEGACY_AUTO_SAVE_KEY]: '<p>Legacy</p>' });
 
 		expect(await migrateLegacyAutoSave(storage, factory)).toBeNull();
+	});
+});
+
+describe('reorderDocuments', () => {
+	it('writes the new order without touching updatedAt', async () => {
+		const factory = new IDBFactory();
+		const first = await createDocument({ title: 'First', now: 100 }, factory);
+		const second = await createDocument({ title: 'Second', now: 200 }, factory);
+
+		await reorderDocuments([second.id, first.id], factory);
+
+		const documents = await listDocuments(factory);
+
+		expect(documents.map((document) => document.title)).toEqual(['Second', 'First']);
+		// Moving a card is not editing the document, and the card shows this date.
+		expect(documents.map((document) => document.updatedAt)).toEqual([200, 100]);
+	});
+
+	it('skips ids that no longer exist', async () => {
+		const factory = new IDBFactory();
+		const first = await createDocument({ title: 'First', now: 100 }, factory);
+		const second = await createDocument({ title: 'Second', now: 200 }, factory);
+
+		await reorderDocuments(['deleted-elsewhere', second.id, first.id], factory);
+
+		expect((await listDocuments(factory)).map((document) => document.title)).toEqual([
+			'Second',
+			'First'
+		]);
 	});
 });

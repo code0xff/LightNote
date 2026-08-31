@@ -25,6 +25,12 @@ export type LightNoteDocument = {
 	contentFormat: 'html' | 'tiptap-json';
 	createdAt: number;
 	updatedAt: number;
+	/**
+	 * Position in the document list. Seeded from `createdAt` so records written
+	 * before manual ordering existed keep the order they already had, and so a
+	 * document created after a reorder still lands at the end.
+	 */
+	order: number;
 	sourceFileName?: string;
 };
 
@@ -42,9 +48,10 @@ type UpdateDocumentInput = Partial<
 	now?: number;
 };
 
-type LegacyLightNoteDocument = Omit<LightNoteDocument, 'content' | 'contentFormat'> & {
+type LegacyLightNoteDocument = Omit<LightNoteDocument, 'content' | 'contentFormat' | 'order'> & {
 	content?: string | JSONContent;
 	contentFormat?: LightNoteDocument['contentFormat'];
+	order?: number;
 	html?: string;
 };
 
@@ -232,7 +239,37 @@ function createDocumentId() {
 }
 
 export function sortDocuments(documents: LightNoteDocument[]) {
-	return [...documents].sort((a, b) => a.createdAt - b.createdAt);
+	// `createdAt` breaks ties rather than being a fallback: two documents can only
+	// share an order value if they were seeded from the same creation time.
+	return [...documents].sort((a, b) => a.order - b.order || a.createdAt - b.createdAt);
+}
+
+/**
+ * Moves one document to a position, returning a new list — or the **same array**
+ * when nothing moves, so a caller can skip a pointless write by identity.
+ */
+export function moveDocumentTo<T extends { id: string }>(
+	documents: T[],
+	id: string,
+	toIndex: number
+): T[] {
+	const from = documents.findIndex((document) => document.id === id);
+
+	if (from === -1) {
+		return documents;
+	}
+
+	const to = Math.min(Math.max(toIndex, 0), documents.length - 1);
+
+	if (from === to) {
+		return documents;
+	}
+
+	const moved = [...documents];
+
+	moved.splice(to, 0, ...moved.splice(from, 1));
+
+	return moved;
 }
 
 export function normalizeDocument(document: LegacyLightNoteDocument): LightNoteDocument {
@@ -243,6 +280,7 @@ export function normalizeDocument(document: LegacyLightNoteDocument): LightNoteD
 		contentFormat: document.contentFormat ?? 'html',
 		createdAt: document.createdAt,
 		updatedAt: document.updatedAt,
+		order: typeof document.order === 'number' ? document.order : document.createdAt,
 		sourceFileName: document.sourceFileName
 	};
 }
@@ -266,6 +304,47 @@ export async function listDocuments(factory?: IDBFactory) {
 	return sortDocuments(documents.map(normalizeDocument));
 }
 
+/**
+ * Writes a manual order over the whole list. `updatedAt` is deliberately left
+ * alone — moving a card is not editing the document, and the card shows that
+ * date. One `getAll` and N puts, all issued from the same event handler so the
+ * transaction cannot commit halfway through and leave a half-ordered list.
+ * Ids that no longer exist are skipped: a document deleted in another tab must
+ * not fail the move of the ones that are still there.
+ */
+export async function reorderDocuments(orderedIds: string[], factory?: IDBFactory) {
+	const db = await openDatabase(factory);
+	const transaction = db.transaction(DOCUMENT_STORE, 'readwrite');
+	const store = transaction.objectStore(DOCUMENT_STORE);
+
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const request = store.getAll();
+
+			request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
+			request.onsuccess = () => {
+				const existing = new Map(
+					(request.result as LegacyLightNoteDocument[]).map((document) => [document.id, document])
+				);
+
+				orderedIds.forEach((id, index) => {
+					const document = existing.get(id);
+
+					if (document) {
+						store.put({ ...normalizeDocument(document), order: index });
+					}
+				});
+
+				resolve();
+			};
+		});
+
+		await transactionDone(transaction);
+	} finally {
+		db.close();
+	}
+}
+
 export async function getDocument(id: string, factory?: IDBFactory) {
 	const document = await withStore<LegacyLightNoteDocument | undefined>(
 		DOCUMENT_STORE,
@@ -286,6 +365,9 @@ export async function createDocument(input: CreateDocumentInput = {}, factory?: 
 		contentFormat: input.contentFormat ?? 'html',
 		createdAt: now,
 		updatedAt: now,
+		// Same value `normalizeDocument` would have inferred, so a new document
+		// sorts last whether or not the list has ever been reordered by hand.
+		order: now,
 		sourceFileName: input.sourceFileName
 	};
 

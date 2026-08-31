@@ -96,6 +96,8 @@
 		ensureInitialDocument,
 		getDocument,
 		listDocuments,
+		moveDocumentTo,
+		reorderDocuments,
 		setStoredCurrentDocumentId,
 		UNTITLED_TITLE,
 		updateDocument,
@@ -523,6 +525,90 @@
 
 	async function refreshDocuments() {
 		documents = await listDocuments();
+	}
+
+	/**
+	 * The list is reordered live as the pointer moves, so the cards show the
+	 * result instead of an insertion marker predicting it. Nothing is written
+	 * until the drop, and this holds the order to put back if the drag is
+	 * cancelled — `dragend` fires for both outcomes, and only a drop clears it.
+	 */
+	let documentsBeforeDrag: LightNoteDocument[] | null = null;
+	let draggingDocumentId: string | null = null;
+
+	function startDocumentDrag(event: DragEvent, id: string) {
+		documentsBeforeDrag = documents;
+		draggingDocumentId = id;
+
+		// Firefox starts no drag at all without payload on the transfer.
+		event.dataTransfer?.setData('text/plain', id);
+
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'move';
+		}
+	}
+
+	function dragDocumentOver(index: number) {
+		if (!draggingDocumentId) {
+			return;
+		}
+
+		documents = moveDocumentTo(documents, draggingDocumentId, index);
+	}
+
+	function dropDocument() {
+		if (!draggingDocumentId) {
+			return;
+		}
+
+		// Clearing this first is what tells `endDocumentDrag` the move was
+		// committed rather than abandoned.
+		documentsBeforeDrag = null;
+		draggingDocumentId = null;
+
+		void persistDocumentOrder();
+	}
+
+	function endDocumentDrag() {
+		if (documentsBeforeDrag) {
+			documents = documentsBeforeDrag;
+			documentsBeforeDrag = null;
+		}
+
+		draggingDocumentId = null;
+	}
+
+	/**
+	 * Alt+Arrow moves the focused card, because a drag is unreachable from the
+	 * keyboard and from touch, where the browser owns the gesture.
+	 */
+	function moveDocumentByKey(event: KeyboardEvent, id: string, index: number) {
+		if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) {
+			return;
+		}
+
+		event.preventDefault();
+
+		const moved = moveDocumentTo(documents, id, index + (event.key === 'ArrowUp' ? -1 : 1));
+
+		if (moved === documents) {
+			return;
+		}
+
+		documents = moved;
+		void persistDocumentOrder();
+	}
+
+	async function persistDocumentOrder() {
+		try {
+			await reorderDocuments(documents.map((document) => document.id));
+		} catch (error) {
+			notifyDatabaseProblem(error);
+			toast.error(describeError(error, 'Failed to save the new order'));
+			console.error(error);
+			// Show what storage actually holds rather than an order that did not land.
+			await refreshDocuments();
+		}
 	}
 
 	async function createNewDocument() {
@@ -2443,7 +2529,15 @@
 				<PanelLeftClose class="h-4 w-4" />
 			</Button>
 		</div>
-		<div class="flex flex-1 flex-col items-stretch gap-2 overflow-y-auto p-3">
+		<!-- The drop is taken here rather than on a card, so releasing in the gap
+		     between two cards, or in the empty space below them, still commits the
+		     order the drag has already arranged. -->
+		<div
+			role="list"
+			class="flex flex-1 flex-col items-stretch gap-2 overflow-y-auto p-3"
+			on:dragover|preventDefault
+			on:drop|preventDefault={dropDocument}
+		>
 			{#if isSharingMode}
 				{#each sharedDocuments as document (`${document.endpoint}:${document.workspace}`)}
 					<div
@@ -2480,12 +2574,20 @@
 					</div>
 				{/each}
 			{:else}
-				{#each documents as document (document.id)}
+				{#each documents as document, index (document.id)}
+					<!-- `draggable` is dropped while this card's title is being edited:
+					     a draggable ancestor stops text selection inside the field. -->
 					<div
-						class="group grid min-h-16 w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {document.id ===
+						role="listitem"
+						draggable={editingTitleDocumentId !== document.id}
+						on:dragstart={(event) => startDocumentDrag(event, document.id)}
+						on:dragover={() => dragDocumentOver(index)}
+						on:dragend={endDocumentDrag}
+						class="group grid min-h-16 w-full min-w-0 cursor-grab grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {document.id ===
 						currentDocument?.id
 							? 'border-primary bg-secondary'
 							: 'border-transparent hover:border-border hover:bg-secondary'}"
+						class:opacity-50={draggingDocumentId === document.id}
 					>
 						{#if document.id === currentDocument?.id && editingTitleDocumentId === document.id}
 							<div class="min-w-0">
@@ -2511,6 +2613,7 @@
 								type="button"
 								class="min-w-0 text-left"
 								on:click={() => startTitleEditing(document)}
+								on:keydown={(event) => moveDocumentByKey(event, document.id, index)}
 							>
 								<span class="flex min-h-7 items-start gap-1">
 									<span class="min-w-0 break-words py-0.5 font-medium"
@@ -2530,6 +2633,7 @@
 									void switchDocument(document.id);
 									dismissOverlaidSidebar();
 								}}
+								on:keydown={(event) => moveDocumentByKey(event, document.id, index)}
 							>
 								<span class="block min-h-5 break-words font-medium"
 									>{document.title || 'Untitled'}</span

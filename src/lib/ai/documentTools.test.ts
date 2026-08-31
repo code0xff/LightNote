@@ -17,6 +17,7 @@ function document(overrides: Partial<LightNoteDocument> = {}): LightNoteDocument
 		contentFormat: 'tiptap-json',
 		createdAt: 1_000,
 		updatedAt: 2_000,
+		order: 1_000,
 		...overrides
 	};
 }
