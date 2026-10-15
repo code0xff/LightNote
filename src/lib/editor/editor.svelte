@@ -2659,7 +2659,7 @@
 			{#if isSharingMode}
 				{#each sharedDocuments as document (`${document.endpoint}:${document.workspace}`)}
 					<div
-						class="group grid min-h-16 w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {isActiveSharedDocument(
+						class="group grid min-h-16 w-full min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {isActiveSharedDocument(
 							document
 						)
 							? 'border-primary bg-secondary'
@@ -2697,7 +2697,7 @@
 						role="listitem"
 						data-document-index={index}
 						on:pointerdown={(event) => pressDocument(event, document.id, false)}
-						class="group grid min-h-16 w-full min-w-0 select-none grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {document.id ===
+						class="group grid min-h-16 w-full min-w-0 shrink-0 select-none grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded-md border px-3 py-2 text-left text-sm transition-colors {document.id ===
 						currentDocument?.id
 							? 'border-primary bg-secondary'
 							: 'border-transparent hover:border-border hover:bg-secondary'}"
